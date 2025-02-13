@@ -13,7 +13,7 @@ CONSOLE_MOVEMENT equ 2d
 
 CENTER_ADDR      equ CONSOLE_WIDTH * (CONSOLE_HIGHT / 2 + CONSOLE_MOVEMENT) + CONSOLE_WIDTH / 2
 
-FRAME_WIDTH    	 equ 21d
+FRAME_WIDTH    	 equ 15d
 FRAME_HIGHT    	 equ 10d
 
 PARTITION_SYM    equ '|'
@@ -32,18 +32,18 @@ Start:
 
         cld             ; moving forward
 
-		mov bx, CONSOLE_WIDTH * (CONSOLE_HIGHT / 2) + CONSOLE_WIDTH / 2
-        sal bx, 1
+		; mov bx, CONSOLE_WIDTH * (CONSOLE_HIGHT / 2) + CONSOLE_WIDTH / 2
+        ; sal bx, 1
 
-		mov byte ptr es:[bx]     , 'A'
-		mov byte ptr es:[bx + 1d], 11001110b
+		; mov byte ptr es:[bx]     , 'A'
+		; mov byte ptr es:[bx + 1d], 11001110b
 		
 		mov dl, FRAME_WIDTH
 		mov dh, FRAME_HIGHT
         lea bx, TABLE_CHARS
         lea si, STRING
         mov di, CENTER_ADDR
-		call PrintFrame
+		call PrintGrowingFrame
 
         mov ax, 4c00h
 		int 21h
@@ -59,7 +59,7 @@ Start:
 ;			bx = addr of line like '+-+|_|+-+' characterizing the characters of table
 ;           si = addr of line "..." which should be inside the frame
 ; Exit: 	none
-; Destr: 	ax, bx, di, cx
+; Destr: 	ax, bx, di, si, cx
 ;-------------------------------------------------------------------------------------
 PrintFrame:
         push bp
@@ -161,12 +161,19 @@ PrintRow:
 ;           dl    = length, dh = height  of the frame
 ;           ds:si = addr of line "..." which should be inside the frame
 ; Exit:     none
-; Destr:    
+; Destr:    ax, cx, di, si
 ;-------------------------------------------------------------------------------------
 PrintTextInFrame:
         push di es
         call CountNumOfLines    ; cx = count of lines
         pop  es di
+
+        mov al, 3
+        cmp dl, al
+        jb no_text
+
+        cmp dh, al
+        jb no_text
 
     ; don't go out of bounds by y
         mov ah, 0               
@@ -190,7 +197,8 @@ PrintTextInFrame:
         pop  cx
 
         add si, 2               ; skip PARTITION_SYM and 
-        
+    
+
     print_next_line:
         push cx
         push es di
@@ -226,9 +234,10 @@ PrintTextInFrame:
 
         add di, CONSOLE_WIDTH * 2
 
-
         pop cx
         loop print_next_line
+
+    no_text:
 
         ret
         endp
@@ -328,10 +337,12 @@ CountNumOfLines:
 ; Prints the frame [length x height] to the console based on the coordinates of the 
 ; upper-left corner smoothly growing
 ;
-; Entry: 	dl = length, dh = height, 
+; Entry: 	di = addr of center of the frame
+;           dl = length, dh = height, 
 ;			bx = addr of line like '+-+|_|+-+' characterizing the characters of table
+;           si = addr of line "..." which should be inside the frame
 ; Exit: 	none
-; Destr: 	ax, bx dx, di, cx
+; Destr: 	ax, dx, cx
 ;-------------------------------------------------------------------------------------
 PrintGrowingFrame:
         mov cx, 1
@@ -351,10 +362,8 @@ PrintGrowingFrame:
         jmp count_growth_step
 
     animated_print_frame:
-        push dx
-        push cx
-        push bx
-
+        push cx bx dx di si
+        
         call PrintFrame
 
         mov  ah, 86h
@@ -362,9 +371,7 @@ PrintGrowingFrame:
 		mov  dx, 86A0h
 		int  15h
 
-        pop bx
-        pop cx
-        pop dx
+        pop si di dx bx cx
 
         add dl, 2
         add dh, 2
@@ -379,7 +386,7 @@ PrintGrowingFrame:
 
 .data
 
-STRING 			db '"|HI GITLER 12345|6789|PAMPAMPAMPAMPAMPAMPAMPAMPAMPAMPAMPAMPAMPAMPAM|huizalupapenisherÍrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr|"'
+STRING 			db '"|HI GITLER 12345|6789|PAMPAMPAMPAMPAMPAMPAMPPAMP|ZZZZZZZZZZZZZZZZZZZZZZZZ|huizalupapenisher|rrrrrrrrr|govno|ARS_LOH_ARS_LOHARS_LOHOH|"'
 TABLE_CHARS		db '…Õª∫ ∫»Õº'
 
 end Start
