@@ -11,6 +11,8 @@ CONSOLE_WIDTH    equ 80d
 CONSOLE_HIGHT    equ 25d
 CONSOLE_MOVEMENT equ 2d
 
+CENTER_ADDR      equ CONSOLE_WIDTH * (CONSOLE_HIGHT / 2 + CONSOLE_MOVEMENT) + CONSOLE_WIDTH / 2
+
 FRAME_WIDTH    	 equ 21d
 FRAME_HIGHT    	 equ 15d
 
@@ -40,6 +42,7 @@ Start:
 		mov dh, FRAME_HIGHT
         lea bx, TABLE_CHARS
         lea si, STRING
+        mov di, CENTER_ADDR
 		call PrintFrame
 
         mov ax, 4c00h
@@ -51,7 +54,8 @@ Start:
 ; Prints the frame [length x height] to the console based on the coordinates of the 
 ; 	upper-left corner
 ;
-; Entry: 	dl = length, dh = height, 
+; Entry: 	di = addr of center of the frame
+;           dl = length, dh = height, 
 ;			bx = addr of line like '+-+|_|+-+' characterizing the characters of table
 ;           si = addr of line "..." which should be inside the frame
 ; Exit: 	none
@@ -76,7 +80,6 @@ PrintFrame:
 
         add ax, cx              ; ax = offset from the upper-left edge of the frame to the center
 
-        mov di, CONSOLE_WIDTH * (CONSOLE_HIGHT / 2 + CONSOLE_MOVEMENT) + CONSOLE_WIDTH / 2    ; center of console
         sub di, ax              ; addr of the upper-left edge of the frame
         sal di, 1               ; *=2 (1 character = 2 bytes)
 
@@ -166,12 +169,15 @@ PrintTextInFrame:
         pop  es di
 
         push cx
-        sar cx, 1               ; count_of_lines / 2
-        mov ax, CONSOLE_WIDTH * 2
-        mul cx                  ; shift = CONSOLE_WIDTH * (count_of_lines / 2)
+        sar  cx, 1               ; count_of_lines / 2
+        mov  ax, CONSOLE_WIDTH * 2
 
-        sub di, ax
-        pop cx
+        push dx
+        mul  cx                  ; shift = CONSOLE_WIDTH * (count_of_lines / 2)
+        pop  dx
+
+        sub  di, ax
+        pop  cx
 
         add si, 2               ; skip PARTITION_SYM and 
         
@@ -180,20 +186,35 @@ PrintTextInFrame:
         push es di
         mov al, PARTITION_SYM
         call CountStrLen        ; cx = length of line in es:si
-        
         pop  di es
         push di
+
+        mov ah, 0               ; don't go out of bounds
+        mov al, dl
+        sub ax, 2               ; minus borders
+
+        cmp cx, ax
+        push cx
+        jbe text_fits
+        mov cx, ax
+    text_fits:
 
         mov ax, cx              ; di - (cx / 2) * 2
         and ax, 0FFFEh          ; make even (and ax, (not 1))
         sub di, ax
 
+        push si
         call PrintLine
+        pop si
+
+        pop cx
+        add si, cx
+        inc si                  ; skip PARTITION_SYM
+
         pop di
 
         add di, CONSOLE_WIDTH * 2
 
-        inc si                  ; skip PARTITION_SYM
 
         pop cx
         loop print_next_line
@@ -205,9 +226,10 @@ PrintTextInFrame:
 ; Prints a line of a certain length at the specified address
 ;
 ; Entry:    es:di = addr of dest
+;           ds:si = addr of source
 ;           cx    = length of line
 ; Exit:     none
-; Destr:    cx, di
+; Destr:    cx, di, si
 ;-------------------------------------------------------------------------------------
 PrintLine:
         mov ah, 0Fh
@@ -346,7 +368,7 @@ PrintGrowingFrame:
 
 .data
 
-STRING 			db '"|HI GITLER 12345|6789|PAMPAMPAM|huizalupapenisher|"'
+STRING 			db '"|HI GITLER 12345|6789|PAMPAMPAMPAMPAMPAMPAMPAMPAMPAMPAMPAMPAMPAMPAM|huizalupapenisherÍrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr|"'
 TABLE_CHARS		db '…Õª∫ ∫»Õº'
 
 end Start
