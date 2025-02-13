@@ -14,7 +14,7 @@ CONSOLE_MOVEMENT equ 2d
 CENTER_ADDR      equ CONSOLE_WIDTH * (CONSOLE_HIGHT / 2 + CONSOLE_MOVEMENT) + CONSOLE_WIDTH / 2
 
 FRAME_WIDTH    	 equ 21d
-FRAME_HIGHT    	 equ 15d
+FRAME_HIGHT    	 equ 10d
 
 PARTITION_SYM    equ '|'
 LINE_ENDS        equ '"'
@@ -168,6 +168,16 @@ PrintTextInFrame:
         call CountNumOfLines    ; cx = count of lines
         pop  es di
 
+    ; don't go out of bounds by y
+        mov ah, 0               
+        mov al, dh
+        sub ax, 2               ; minus borders
+
+        cmp cx, ax
+        jbe text_fits_y
+        mov cx, ax
+    text_fits_y:
+
         push cx
         sar  cx, 1               ; count_of_lines / 2
         mov  ax, CONSOLE_WIDTH * 2
@@ -189,15 +199,16 @@ PrintTextInFrame:
         pop  di es
         push di
 
-        mov ah, 0               ; don't go out of bounds
+    ; don't go out of bounds by x
+        mov ah, 0               
         mov al, dl
         sub ax, 2               ; minus borders
 
         cmp cx, ax
         push cx
-        jbe text_fits
+        jbe text_fits_x
         mov cx, ax
-    text_fits:
+    text_fits_x:
 
         mov ax, cx              ; di - (cx / 2) * 2
         and ax, 0FFFEh          ; make even (and ax, (not 1))
