@@ -14,6 +14,9 @@ CONSOLE_MOVEMENT equ 2d
 FRAME_WIDTH    	 equ 21d
 FRAME_HIGHT    	 equ 15d
 
+PARTITION_SYM    equ '|'
+LINE_ENDS        equ '"'
+
 MAX_STR_LEN		 equ 150d
 
 
@@ -45,33 +48,6 @@ Start:
 
 
 ;-------------------------------------------------------------------------------------
-; Prints a row '#--..--#' with N chars in console with offset
-;
-; Entry: 	es:di = start addr (es has to point to a segment of video memory 0b800h)
-;           cx    = length
-;		 	bx    = addr of line like '|_|' characterizing the characters of line
-; Exit:		none
-; Destr:	ax, cx, di
-;-------------------------------------------------------------------------------------
-PrintRow:
-        mov ah, 0Fh
-
-        mov al, [bx]
-        stosw 
-
-		sub cx, 2d		; length -= 2 (for final char)
-        mov al, [bx + 1]
-        rep stosw
-
-        mov al, [bx + 2]
-        stosw
-
-		ret
-		endp
-;-------------------------------------------------------------------------------------
-
-
-;-------------------------------------------------------------------------------------
 ; Prints the frame [length x height] to the console based on the coordinates of the 
 ; 	upper-left corner
 ;
@@ -79,7 +55,7 @@ PrintRow:
 ;			bx = addr of line like '+-+|_|+-+' characterizing the characters of table
 ;           si = addr of line "..." which should be inside the frame
 ; Exit: 	none
-; Destr: 	ax, bx dx, di, cx
+; Destr: 	ax, bx, di, cx
 ;-------------------------------------------------------------------------------------
 PrintFrame:
         push bp
@@ -139,8 +115,7 @@ PrintFrame:
 
 
         mov di, CONSOLE_WIDTH * (CONSOLE_HIGHT / 2 + CONSOLE_MOVEMENT) + CONSOLE_WIDTH / 2
-        sub dl, 2           ; minus the borders of the frame
-        
+        sal di, 1
         call PrintTextInFrame
 
         leave
@@ -150,51 +125,81 @@ PrintFrame:
 
 
 ;-------------------------------------------------------------------------------------
+; Prints a row '#--..--#' with N chars in console with offset
+;
+; Entry: 	es:di = start addr (es has to point to a segment of video memory 0b800h)
+;           cx    = length
+;		 	bx    = addr of line like '|_|' characterizing the characters of line
+; Exit:		none
+; Destr:	ax, cx, di
+;-------------------------------------------------------------------------------------
+PrintRow:
+        mov ah, 0Fh
+
+        mov al, [bx]
+        stosw 
+
+		sub cx, 2d		; length -= 2 (for final char)
+        mov al, [bx + 1]
+        rep stosw
+
+        mov al, [bx + 2]
+        stosw
+
+		ret
+		endp
+;-------------------------------------------------------------------------------------
+
+
+;-------------------------------------------------------------------------------------
 ; Prints a text in frame
 ; 
-; Entry:    di = addr of center       of the frame
-;           dl = length, dh = height  of the frame
-;           si = addr of line "..." which should be inside the frame
+; Entry:    di    = addr of center       of the frame
+;           dl    = length, dh = height  of the frame
+;           ds:si = addr of line "..." which should be inside the frame
 ; Exit:     none
 ; Destr:    
 ;-------------------------------------------------------------------------------------
 PrintTextInFrame:
+        push di es
+        call CountNumOfLines    ; cx = count of lines
+        pop  es di
+
+        push cx
+        sar cx, 1               ; count_of_lines / 2
+        mov ax, CONSOLE_WIDTH * 2
+        mul cx                  ; shift = CONSOLE_WIDTH * (count_of_lines / 2)
+
+        sub di, ax
+        pop cx
+
+        add si, 2               ; skip PARTITION_SYM and 
+        
+    print_next_line:
+        push cx
+        push es di
+        mov al, PARTITION_SYM
+        call CountStrLen        ; cx = length of line in es:si
+        
+        pop  di es
         push di
-        push es
-        call CountStrLen    ; cx = length of line in es:si
-        pop  es
-        pop  di
 
-        inc si              ; skip the first "
-
-        mov ah, 0
-        mov al, dl
-        div cl
-
-        ; mov ch, 0
-        ; mov cl, al
-
-        ; ...cycle
-
-        mov ch, 0
-        mov cl, ah
-
-        shr ax, 8       ; ah -> al
-        sar ax, 1
+        mov ax, cx              ; di - (cx / 2) * 2
+        and ax, 0FFFEh          ; make even (and ax, (not 1))
         sub di, ax
 
-        sal di, 1
-
         call PrintLine
+        pop di
+
+        add di, CONSOLE_WIDTH * 2
+
+        inc si                  ; skip PARTITION_SYM
+
+        pop cx
+        loop print_next_line
 
         ret
         endp
-
-        ; mov ax, cx
-        ; sar ax, 1
-        ; sub di, ax
-        ; sal di, 1           ; *=2 (1 character = 2 bytes)
-
 
 ;-------------------------------------------------------------------------------------
 ; Prints a line of a certain length at the specified address
@@ -211,6 +216,75 @@ PrintLine:
         lodsb
         stosw
         loop print_line_loop
+
+        ret
+        endp
+;-------------------------------------------------------------------------------------
+
+
+;-------------------------------------------------------------------------------------
+; Counts the number of characters of a string formatted as '*al* ... *al*'
+;
+; Entry:	ds:si = source ptr
+;           al    = border symbol
+; Exit:		cx 	  = length
+; Destr:	cx, es
+;-------------------------------------------------------------------------------------
+CountStrLen:
+        mov di, si
+        mov cx, ds
+        mov es, cx
+
+		add di, 1			; skip first '*al*'
+		push di
+
+		mov cx, MAX_STR_LEN
+		repne scasb
+
+		mov cx, di
+		pop di
+		sub cx, di
+		
+        ret
+        endp
+;-------------------------------------------------------------------------------------
+
+
+;-------------------------------------------------------------------------------------
+; Counts the number of lines of a string formatted as '"...|...|.. .."' ('|' separates lines)
+;
+; Entry:	ds:si = source ptr
+; Exit:		cx 	  = num of lines
+; Destr:	ax, cx, es, di
+;-------------------------------------------------------------------------------------
+CountNumOfLines:
+        mov di, si  ; for scasw
+        mov ax, ds
+        mov es, ax
+
+
+        mov ah, 0   ; counter of borders
+        mov al, LINE_ENDS
+        push di
+        call CountStrLen
+        pop di
+
+        inc di      ; skip first '"'
+        mov al, PARTITION_SYM
+
+    count_borders:
+        scasb
+        jne not_a_border
+
+        inc ah
+
+    not_a_border:
+        loop count_borders
+
+        dec ah      ; count_of_lines = count_of_borders - 1
+
+        mov ch, 0
+        mov cl, ah
 
         ret
         endp
@@ -269,40 +343,10 @@ PrintGrowingFrame:
 ;-------------------------------------------------------------------------------------
 
 
-;-------------------------------------------------------------------------------------
-; Counts the number of characters of a string enclosed in quotation marks
-;
-; Entry:	ds:si = source ptr
-; Exit:		cx 	  = length
-; Destr:	ax, cx, es, di
-;-------------------------------------------------------------------------------------
-CountStrLen:
-        mov di, si
-
-        mov ax, ds
-        mov es, ax
-
-		inc di			; skip first "
-		push di
-
-		mov cx, MAX_STR_LEN
-		mov ax, '"'
-		repne scasb
-
-        dec di          ; minus last "
-
-		mov cx, di
-		pop di
-		sub cx, di
-		
-        ret
-        endp
-;-------------------------------------------------------------------------------------
-
 
 .data
 
-STRING 			db '"HI GITLER DETSKOE PORNO WTFFFFFF"'
+STRING 			db '"|HI GITLER 12345|6789|PAMPAMPAM|huizalupapenisher|"'
 TABLE_CHARS		db '…Õª∫ ∫»Õº'
 
 end Start
