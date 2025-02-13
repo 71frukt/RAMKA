@@ -1,0 +1,400 @@
+Turbo Assembler	 Version 4.1	    02/13/25 10:31:27	    Page 1
+newramka.asm
+
+
+
+      1	0000			     .model tiny
+      2				     .186
+      3
+      4	0000			     .code
+      5
+      6				     org 100h
+      7
+      8	      =B800		     VIDEOSEG		  equ 0b800h
+      9
+     10	      =0050		     CONSOLE_WIDTH    equ 80d
+     11	      =0019		     CONSOLE_HIGHT    equ 25d
+     12	      =0002		     CONSOLE_MOVEMENT equ 2d
+     13
+     14	      =0015		     FRAME_WIDTH      equ 21d
+     15	      =000F		     FRAME_HIGHT      equ 15d
+     16
+     17	      =0096		     MAX_STR_LEN	      equ 150d
+     18
+     19
+     20	0100			     Start:
+     21						     ; mov ah, 09h
+     22						     ; mov dx, offset STRING
+     23						     ; int 21h
+     24
+     25	0100  B8 B800				     mov ax, VIDEOSEG
+     26	0103  8E C0				     mov es, ax
+     27
+     28	0105  FC			     cld	     ; moving forward
+     29
+     30	0106  BB 03E8				     mov bx, CONSOLE_WIDTH * (CONSOLE_HIGHT / 2) + CONSOLE_WIDTH / 2
+     31	0109  D1 E3			     sal bx, 1
+     32
+     33	010B  26: C6 07	41			     mov byte ptr es:[bx]     ,	'A'
+     34	010F  26: C6 47	01 CE			     mov byte ptr es:[bx + 1d],	11001110b
+     35
+     36	0114  B2 15				     mov dl, FRAME_WIDTH
+     37	0116  B6 0F				     mov dh, FRAME_HIGHT
+     38	0118  BB 0022r			     lea bx, TABLE_CHARS
+     39	011B  BE 0000r			     lea si, STRING
+     40	011E  E8 0017				     call PrintFrame
+     41
+     42	0121  B8 4C00			     mov ax, 4c00h
+     43	0124  CD 21				     int 21h
+     44
+     45
+     46
+     47				     ;-------------------------------------------------------------------------------------
+     48				     ; Prints a	row '#--..--#' with N chars in console with offset
+     49				     ;
+     50				     ; Entry:	     es:di = start addr	(es has	to point to a segment of video memory 0b800h)
+     51				     ;		 cx    = length
+     52				     ;			     bx	   = addr of line like '|_|' characterizing the	characters of line
+     53				     ; Exit:	     none
+     54				     ; Destr:	     ax, cx, di
+     55				     ;-------------------------------------------------------------------------------------
+     56	0126			     PrintRow:
+     57	0126  B4 0F			     mov ah, 0Fh
+Turbo Assembler	 Version 4.1	    02/13/25 10:31:27	    Page 2
+newramka.asm
+
+
+
+     58
+     59	0128  8A 07			     mov al, [bx]
+     60	012A  AB			     stosw
+     61
+     62	012B  83 E9 02				     sub cx, 2d		     ; length -= 2 (for	final char)
+     63	012E  8A 47 01			     mov al, [bx + 1]
+     64	0131  F3> AB			     rep stosw
+     65
+     66	0133  8A 47 02			     mov al, [bx + 2]
+     67	0136  AB			     stosw
+     68
+     69	0137  C3				     ret
+     70	0138					     endp
+     71				     ;-------------------------------------------------------------------------------------
+     72
+     73
+     74				     ;-------------------------------------------------------------------------------------
+     75				     ; Prints the frame	[length	x height] to the console based on the coordinates of the
+     76				     ;	     upper-left	corner
+     77				     ;
+     78				     ; Entry:	     dl	= length, dh = height,
+     79				     ;			     bx	= addr of line like '+-+|_|+-+'	characterizing the characters of    +
+     80				     table
+     81				     ;		 si = addr of line "..." which should be inside	the frame
+     82				     ; Exit:	     none
+     83				     ; Destr:	     ax, bx dx,	di, cx
+     84				     ;-------------------------------------------------------------------------------------
+     85	0138			     PrintFrame:
+     86	0138  55			     push bp
+     87	0139  8B EC			     mov bp, sp
+     88
+     89	013B  B4 00			     mov ah, 0		     ; TODO ???
+     90	013D  8A C6			     mov al, dh		     ; ax = dh/2 * CONSOLE_WIDTH + dl/2	= (dh *	CONSOLE_WIDTH +	dl) +
+     91				     / 2
+     92	013F  D1 F8			     sar ax, 1
+     93
+     94	0141  B9 0050			     mov cx, CONSOLE_WIDTH
+     95	0144  52			     push dx
+     96	0145  F7 E1			     mul cx
+     97	0147  5A			     pop dx
+     98
+     99	0148  8A CA			     mov cl, dl		     ; TODO ???
+    100	014A  B5 00			     mov ch, 0
+    101	014C  D1 F9			     sar cx, 1
+    102
+    103	014E  03 C1			     add ax, cx		     ; ax = offset from	the upper-left edge of the frame to the	    +
+    104				     center
+    105
+    106	0150  BF 0488			     mov di, CONSOLE_WIDTH * (CONSOLE_HIGHT / 2	+ CONSOLE_MOVEMENT) + CONSOLE_WIDTH / 2	   ;+
+    107				     center of console
+    108	0153  2B F8			     sub di, ax		     ; addr of the upper-left edge of the frame
+    109	0155  D1 E7			     sal di, 1		     ; *=2 (1 character	= 2 bytes)
+    110
+    111	0157  B5 00			     mov ch, 0
+    112	0159  8A CA			     mov cl, dl
+    113
+    114	015B  57				     push di
+Turbo Assembler	 Version 4.1	    02/13/25 10:31:27	    Page 3
+newramka.asm
+
+
+
+    115	015C  E8 FFC7				     call PrintRow
+    116	015F  5F				     pop  di
+    117
+    118	0160  81 C7 00A0		     add di, CONSOLE_WIDTH * 2d
+    119	0164  83 C3 03				     add bx, 3d
+    120
+    121	0167  8A CE				     mov cl, dh
+    122	0169  83 E9 02			     sub cx, 2d	      ;	for 1st	end last lines
+    123
+    124	016C  41			     inc cx
+    125	016D  EB 0E 90			     jmp test2
+    126
+    127	0170				 loop2:		     ; for (cx = hight;	cx > 0;	cx--)
+    128	0170  51			     push cx
+    129	0171  57			     push di
+    130	0172  8A CA			     mov cl, dl	     ; arg cx =	length
+    131	0174  E8 FFAF			     call PrintRow
+    132	0177  5F			     pop di
+    133	0178  59			     pop cx
+    134
+    135	0179  81 C7 00A0		     add di, CONSOLE_WIDTH * 2d
+    136
+    137	017D				 test2:
+    138	017D  E2 F1				     loop  loop2
+    139
+    140	017F  83 C3 03				     add bx, 3d
+    141	0182  8A CA			     mov cl, dl		 ; arg cx = length
+    142	0184  E8 FF9F				     call PrintRow
+    143
+    144
+    145	0187  BF 0488			     mov di, CONSOLE_WIDTH * (CONSOLE_HIGHT / 2	+ CONSOLE_MOVEMENT) + CONSOLE_WIDTH / 2
+    146	018A  80 EA 02			     sub dl, 2		 ; minus the borders of	the frame
+    147
+    148	018D  E8 0002			     call PrintTextInFrame
+    149
+    150	0190  C9			     leave
+    151	0191  C3				     ret
+    152	0192					     endp
+    153				     ;-------------------------------------------------------------------------------------
+    154
+    155
+    156				     ;-------------------------------------------------------------------------------------
+    157				     ; Prints a	text in	frame
+    158				     ;
+    159				     ; Entry:	 di = addr of center	   of the frame
+    160				     ;		 dl = length, dh = height  of the frame
+    161				     ;		 si = addr of line "..." which should be inside	the frame
+    162				     ; Exit:	 none
+    163				     ; Destr:
+    164				     ;-------------------------------------------------------------------------------------
+    165	0192			     PrintTextInFrame:
+    166	0192  57			     push di
+    167	0193  06			     push es
+    168	0194  E8 0053			     call CountStrLen	 ; cx =	length of line in es:si
+    169	0197  07			     pop  es
+    170	0198  5F			     pop  di
+    171
+Turbo Assembler	 Version 4.1	    02/13/25 10:31:27	    Page 4
+newramka.asm
+
+
+
+    172	0199  46			     inc si		 ; skip	the first "
+    173
+    174	019A  B4 00			     mov ah, 0
+    175	019C  8A C2			     mov al, dl
+    176	019E  F6 F1			     div cl
+    177
+    178					     ; mov ch, 0
+    179					     ; mov cl, al
+    180
+    181					     ; ...cycle
+    182
+    183	01A0  B5 00			     mov ch, 0
+    184	01A2  8A CC			     mov cl, ah
+    185
+    186	01A4  C1 E8 04			     shr ax, 4	     ; ah -> al
+    187	01A7  D1 F8			     sar ax, 1
+    188	01A9  2B F8			     sub di, ax
+    189
+    190	01AB  D1 E7			     sal di, 1
+    191
+    192	01AD  E8 0001			     call PrintLine
+    193
+    194	01B0  C3			     ret
+    195	01B1				     endp
+    196
+    197					     ; mov ax, cx
+    198					     ; sar ax, 1
+    199					     ; sub di, ax
+    200					     ; sal di, 1	   ; *=2 (1 character =	2 bytes)
+    201
+    202
+    203				     ;-------------------------------------------------------------------------------------
+    204				     ; Prints a	line of	a certain length at the	specified address
+    205				     ;
+    206				     ; Entry:	 es:di = addr of dest
+    207				     ;		 cx    = length	of line
+    208				     ; Exit:	 none
+    209				     ; Destr:	 cx, di
+    210				     ;-------------------------------------------------------------------------------------
+    211	01B1			     PrintLine:
+    212	01B1  B4 0F			     mov ah, 0Fh
+    213
+    214	01B3				 print_line_loop:
+    215	01B3  AC			     lodsb
+    216	01B4  AB			     stosw
+    217	01B5  E2 FC			     loop print_line_loop
+    218
+    219	01B7  C3			     ret
+    220	01B8				     endp
+    221				     ;-------------------------------------------------------------------------------------
+    222
+    223
+    224				     ;-------------------------------------------------------------------------------------
+    225				     ; Prints the frame	[length	x height] to the console based on the coordinates of the
+    226				     ; upper-left corner smoothly growing
+    227				     ;
+    228				     ; Entry:	     dl	= length, dh = height,
+Turbo Assembler	 Version 4.1	    02/13/25 10:31:27	    Page 5
+newramka.asm
+
+
+
+    229				     ;			     bx	= addr of line like '+-+|_|+-+'	characterizing the characters of    +
+    230				     table
+    231				     ; Exit:	     none
+    232				     ; Destr:	     ax, bx dx,	di, cx
+    233				     ;-------------------------------------------------------------------------------------
+    234	01B8			     PrintGrowingFrame:
+    235	01B8  B9 0001			     mov cx, 1
+    236
+    237	01BB				 count_growth_step:	 ; while (dl-- > 3 && dh-- > 3)	cx++
+    238	01BB  80 FA 03			     cmp dl, 3		 ; '3' is protection from dl or	dh = 1
+    239	01BE  76 0E			     jbe animated_print_frame
+    240
+    241	01C0  80 FE 03			     cmp dh, 3
+    242	01C3  76 09			     jbe animated_print_frame
+    243
+    244	01C5  80 EA 02			     sub dl, 2
+    245	01C8  80 EE 02			     sub dh, 2
+    246
+    247	01CB  41			     inc cx
+    248
+    249	01CC  EB ED			     jmp count_growth_step
+    250
+    251	01CE				 animated_print_frame:
+    252	01CE  52			     push dx
+    253	01CF  51			     push cx
+    254	01D0  53			     push bx
+    255
+    256	01D1  E8 FF64			     call PrintFrame
+    257
+    258	01D4  B4 86			     mov  ah, 86h
+    259	01D6  B9 0001				     mov  cx, 01h    ; cx:dx = 186A0h =	0.1 * 10^6 mcs = 0.1 s
+    260	01D9  BA 86A0				     mov  dx, 86A0h
+    261	01DC  CD 15				     int  15h
+    262
+    263	01DE  5B			     pop bx
+    264	01DF  59			     pop cx
+    265	01E0  5A			     pop dx
+    266
+    267	01E1  80 C2 02			     add dl, 2
+    268	01E4  80 C6 02			     add dh, 2
+    269
+    270	01E7  E2 E5			     loop animated_print_frame
+    271
+    272	01E9  C3			     ret
+    273	01EA					     endp
+    274				     ;-------------------------------------------------------------------------------------
+    275
+    276
+    277				     ;-------------------------------------------------------------------------------------
+    278				     ; Counts the number of characters of a string enclosed in quotation marks
+    279				     ;
+    280				     ; Entry:	     ds:si = source ptr
+    281				     ; Exit:	     cx	       = length
+    282				     ; Destr:	     ax, cx, es, di
+    283				     ;-------------------------------------------------------------------------------------
+    284	01EA			     CountStrLen:
+    285	01EA  8B FE			     mov di, si
+Turbo Assembler	 Version 4.1	    02/13/25 10:31:27	    Page 6
+newramka.asm
+
+
+
+    286
+    287	01EC  8C D8			     mov ax, ds
+    288	01EE  8E C0			     mov es, ax
+    289
+    290	01F0  47				     inc di		     ; skip first "
+    291	01F1  57				     push di
+    292
+    293	01F2  B9 0096				     mov cx, MAX_STR_LEN
+    294	01F5  B8 0022				     mov ax, '"'
+    295	01F8  F2> AE				     repne scasb
+    296
+    297	01FA  4F			     dec di	     ; minus last "
+    298
+    299	01FB  8B CF				     mov cx, di
+    300	01FD  5F				     pop di
+    301	01FE  2B CF				     sub cx, di
+    302
+    303	0200  C3			     ret
+    304	0201				     endp
+    305				     ;-------------------------------------------------------------------------------------
+    306
+    307
+    308	0201			     .data
+    309
+    310	0000  22 48 49 20 47 49	54+  STRING		     db	'"HI GITLER DETSKOE PORNO WTFFFFFF"'
+    311	      4C 45 52 20 44 45	54+
+    312	      53 4B 4F 45 20 50	4F+
+    313	      52 4E 4F 20 57 54	46+
+    314	      46 46 46 46 46 22
+    315	0022  C9 CD BB BA 20 BA	C8+  TABLE_CHARS	     db	'…Õª∫ ∫»Õº'
+    316	      CD BC
+    317
+    318				     end Start
+Turbo Assembler	 Version 4.1	    02/13/25 10:31:27	    Page 7
+Symbol Table
+
+
+
+
+Symbol Name			  Type	 Value
+
+??DATE				  Text	 "02/13/25"
+??FILENAME			  Text	 "newramka"
+??TIME				  Text	 "10:31:27"
+??VERSION			  Number 040A
+@32BIT				  Text	 0
+@CODE				  Text	 DGROUP
+@CODESIZE			  Text	 0
+@CPU				  Text	 0103H
+@CURSEG				  Text	 _DATA
+@DATA				  Text	 DGROUP
+@DATASIZE			  Text	 0
+@FILENAME			  Text	 NEWRAMKA
+@INTERFACE			  Text	 000H
+@MODEL				  Text	 1
+@STACK				  Text	 DGROUP
+@WORDSIZE			  Text	 2
+ANIMATED_PRINT_FRAME		  Near	 DGROUP:01CE
+CONSOLE_HIGHT			  Number 0019
+CONSOLE_MOVEMENT		  Number 0002
+CONSOLE_WIDTH			  Number 0050
+COUNTSTRLEN			  Near	 DGROUP:01EA
+COUNT_GROWTH_STEP		  Near	 DGROUP:01BB
+FRAME_HIGHT			  Number 000F
+FRAME_WIDTH			  Number 0015
+LOOP2				  Near	 DGROUP:0170
+MAX_STR_LEN			  Number 0096
+PRINTFRAME			  Near	 DGROUP:0138
+PRINTGROWINGFRAME		  Near	 DGROUP:01B8
+PRINTLINE			  Near	 DGROUP:01B1
+PRINTROW			  Near	 DGROUP:0126
+PRINTTEXTINFRAME		  Near	 DGROUP:0192
+PRINT_LINE_LOOP			  Near	 DGROUP:01B3
+START				  Near	 DGROUP:0100
+STRING				  Byte	 DGROUP:0000
+TABLE_CHARS			  Byte	 DGROUP:0022
+TEST2				  Near	 DGROUP:017D
+VIDEOSEG			  Number B800
+
+Groups & Segments		  Bit Size Align  Combine Class
+
+DGROUP				  Group
+  _DATA				  16  002B Word	  Public  DATA
+  _TEXT				  16  0201 Word	  Public  CODE
+
