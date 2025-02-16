@@ -6,15 +6,16 @@
 org 100h
 
 VIDEOSEG	     equ 0b800h
+CONSOLE_ARGS     equ 80h
 
 CONSOLE_WIDTH    equ 80d
-CONSOLE_HIGHT    equ 25d
+CONSOLE_HEIGHT   equ 25d
 CONSOLE_MOVEMENT equ 2d
 
-CENTER_ADDR      equ CONSOLE_WIDTH * (CONSOLE_HIGHT / 2 + CONSOLE_MOVEMENT) + CONSOLE_WIDTH / 2
+CENTER_ADDR      equ CONSOLE_WIDTH * (CONSOLE_HEIGHT / 2 + CONSOLE_MOVEMENT) + CONSOLE_WIDTH / 2
 
 FRAME_WIDTH    	 equ 15d
-FRAME_HIGHT    	 equ 10d
+FRAME_HEIGHT    	 equ 10d
 
 PARTITION_SYM    equ '|'
 LINE_ENDS        equ '"'
@@ -23,6 +24,11 @@ MAX_STR_LEN		 equ 150d
 
 
 Start:
+        ; mov si, offset example
+        ; call AtoI_dec
+
+        mov al, ds:[80h]
+
 		; mov ah, 09h
 		; mov dx, offset STRING
 		; int 21h
@@ -32,14 +38,16 @@ Start:
 
         cld             ; moving forward
 
-		; mov bx, CONSOLE_WIDTH * (CONSOLE_HIGHT / 2) + CONSOLE_WIDTH / 2
+		; mov bx, CONSOLE_WIDTH * (CONSOLE_HEIGHT / 2) + CONSOLE_WIDTH / 2
         ; sal bx, 1
 
 		; mov byte ptr es:[bx]     , 'A'
 		; mov byte ptr es:[bx + 1d], 11001110b
 		
+        ; call GetArgs
+
 		mov dl, FRAME_WIDTH
-		mov dh, FRAME_HIGHT
+		mov dh, FRAME_HEIGHT
         lea bx, TABLE_CHARS
         lea si, STRING
         mov di, CENTER_ADDR
@@ -54,10 +62,10 @@ Start:
 ; Prints the frame [length x height] to the console based on the coordinates of the 
 ; 	upper-left corner
 ;
-; Entry: 	di = addr of center of the frame
-;           dl = length, dh = height, 
-;			bx = addr of line like '+-+|_|+-+' characterizing the characters of table
-;           si = addr of line "..." which should be inside the frame
+; Entry: 	di    = addr of center of the frame
+;           dl    = length, dh = height, 
+;			bx    = addr of line like '+-+|_|+-+' characterizing the characters of table
+;           ds:si = addr of line "..." which should be inside the frame
 ; Exit: 	none
 ; Destr: 	ax, bx, di, si, cx
 ;-------------------------------------------------------------------------------------
@@ -99,7 +107,7 @@ PrintFrame:
         inc cx
         jmp test2
 
-    loop2:              ; for (cx = hight; cx > 0; cx--)
+    loop2:              ; for (cx = height; cx > 0; cx--)
         push cx
         push di
         mov cl, dl      ; arg cx = length
@@ -117,7 +125,7 @@ PrintFrame:
 		call PrintRow
 
 
-        mov di, CONSOLE_WIDTH * (CONSOLE_HIGHT / 2 + CONSOLE_MOVEMENT) + CONSOLE_WIDTH / 2
+        mov di, CONSOLE_WIDTH * (CONSOLE_HEIGHT / 2 + CONSOLE_MOVEMENT) + CONSOLE_WIDTH / 2
         sal di, 1
         call PrintTextInFrame
 
@@ -203,7 +211,7 @@ PrintTextInFrame:
         push cx
         push es di
         mov al, PARTITION_SYM
-        call CountStrLen        ; cx = length of line in es:si
+        call CountStrLen        ; cx = length of line in ds:si
         pop  di es
         push di
 
@@ -270,7 +278,7 @@ PrintLine:
 ; Entry:	ds:si = source ptr
 ;           al    = border symbol
 ; Exit:		cx 	  = length
-; Destr:	cx, es
+; Destr:	cx, es, di
 ;-------------------------------------------------------------------------------------
 CountStrLen:
         mov di, si
@@ -383,10 +391,116 @@ PrintGrowingFrame:
 ;-------------------------------------------------------------------------------------
 
 
+;-------------------------------------------------------------------------------------
+; Converts a string ending with a space to a decimal number
+; after work of the func si indicates on the space
+;
+; Entry:    ds:si = addr of string ending with a space
+; Exit:     ax    = decimal number
+; Destr:    ax, bx, cx, dx, si, es
+;-------------------------------------------------------------------------------------
+AtoI_dec:
+        mov al, ' '
+        call CountStrLen     ; cx = length
+        dec cx
+
+        xor ax, ax      ; ax = the final number
+        xor bx, bx      ; bx = cur_digit
+
+    next_digit:
+        mov bl, ds:[si]   ; bx = cur_digit    
+        inc si
+        sub bx, '0'
+
+        push ax
+
+        mov ax, 10
+        call Pow        ; ax = 10^cx
+
+        mul bx          ; ax = cur_digit * 10 ^ (length - 1)
+        mov bx, ax
+
+        pop ax
+
+        add ax, bx      ; final_num += cur_digit * 10 ^ (length - 1)
+
+        dec cx
+        jns next_digit  ; cx < 0
+
+        ret
+        endp
+;-------------------------------------------------------------------------------------
+
+
+;-------------------------------------------------------------------------------------
+; Raises a number to a power
+; Entry:    ax = number
+;           cx = degree
+; Exit:     ax = a number raised to a power
+; Destr:    ax, dx
+;-------------------------------------------------------------------------------------
+Pow:
+        jcxz zero_degree
+
+        cmp cx, 1
+        je one_degree
+
+        push cx
+        dec  cx
+
+        rep mul ax
+
+        pop cx
+        ret
+
+    zero_degree:
+        mov ax, 1
+        ret
+
+    one_degree:
+        ret
+
+        endp
+;-------------------------------------------------------------------------------------
+
+
+;-------------------------------------------------------------------------------------
+; Gets arguments from the command line
+; Entry:    none
+; Exit:     dl = length, dh = height, 
+
+;			//bx = addr of line like '+-+|_|+-+' characterizing the characters of table
+;           //si = addr of line "..." which should be inside the frame
+;
+; Destr:    
+;-------------------------------------------------------------------------------------
+GetArgs:
+        mov si, CONSOLE_ARGS
+
+        mov cl, ds:[si]
+        inc si          ; skip args len
+
+    ; get length    
+        push cx         
+        call AtoI_dec   ; after that si pointers on the next arg
+        pop  cx
+        mov  dl, al
+
+    ; get height
+        push cx dx
+        call AtoI_dec   ; after that si pointers on the next arg
+        pop  dx cx
+        mov  dh, al
+
+        ret
+        endp
+;-------------------------------------------------------------------------------------
 
 .data
 
 STRING 			db '"|HI GITLER 12345|6789|PAMPAMPAMPAMPAMPAMPAMPPAMP|ZZZZZZZZZZZZZZZZZZZZZZZZ|huizalupapenisher|rrrrrrrrr|govno|ARS_LOH_ARS_LOHARS_LOHOH|"'
-TABLE_CHARS		db '�ͻ� ��ͼ'
+TABLE_CHARS		db 'ЙН»є єИНј'
+
+example         db '156 '
 
 end Start
