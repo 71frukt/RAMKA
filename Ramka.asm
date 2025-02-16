@@ -14,43 +14,35 @@ CONSOLE_MOVEMENT equ 2d
 
 CENTER_ADDR      equ CONSOLE_WIDTH * (CONSOLE_HEIGHT / 2 + CONSOLE_MOVEMENT) + CONSOLE_WIDTH / 2
 
-FRAME_WIDTH    	 equ 15d
-FRAME_HEIGHT    	 equ 10d
+FRAME_WIDTH    	 equ 50d
+FRAME_HEIGHT     equ 20d
 
-PARTITION_SYM    equ '|'
-LINE_ENDS        equ '"'
+PARTITION_SYM    equ '/'
+LINE_END_SYM     equ '*'
 
 MAX_STR_LEN		 equ 150d
 
 
 Start:
-        ; mov si, offset example
-        ; call AtoI_dec
+        call GetArgs
 
-        mov al, ds:[80h]
+		mov di, VIDEOSEG
+		mov es, di
 
-		; mov ah, 09h
-		; mov dx, offset STRING
-		; int 21h
+        cld             ; moving forward		
 
-		mov ax, VIDEOSEG
-		mov es, ax
+		; mov dl, FRAME_WIDTH
+		; mov dh, FRAME_HEIGHT
+        ; mov al, 0AAh
+        ; mov ah, 0AAh
 
-        cld             ; moving forward
-
-		; mov bx, CONSOLE_WIDTH * (CONSOLE_HEIGHT / 2) + CONSOLE_WIDTH / 2
-        ; sal bx, 1
-
-		; mov byte ptr es:[bx]     , 'A'
-		; mov byte ptr es:[bx + 1d], 11001110b
-		
-        ; call GetArgs
-
-		mov dl, FRAME_WIDTH
-		mov dh, FRAME_HEIGHT
-        lea bx, TABLE_CHARS
-        lea si, STRING
+        ; lea bx, TABLE_CHARS + 1     ; skip LINE_END_SYM
+        ; lea si, STRING;
+        
+        ; lea bx, TABLE_CHARS + 1     ; skip LINE_END_SYM
+        ; lea si, STRING
         mov di, CENTER_ADDR
+		; call PrintFrame
 		call PrintGrowingFrame
 
         mov ax, 4c00h
@@ -62,16 +54,20 @@ Start:
 ; Prints the frame [length x height] to the console based on the coordinates of the 
 ; 	upper-left corner
 ;
-; Entry: 	di    = addr of center of the frame
-;           dl    = length, dh = height, 
-;			bx    = addr of line like '+-+|_|+-+' characterizing the characters of table
-;           ds:si = addr of line "..." which should be inside the frame
+; Entry: 	di = addr of center of the frame
+;           dl = length,      dh = height
+;           ah = frame color, al = bckg color
+;			bx = addr of line like '+-+|_|+-+' characterizing the characters of table
+;           si = addr of line "..." which should be inside the frame
 ; Exit: 	none
 ; Destr: 	ax, bx, di, si, cx
 ;-------------------------------------------------------------------------------------
 PrintFrame:
         push bp
         mov bp, sp
+
+        sub sp, 2               ; allocate memory for color
+        mov [bp - 2], ax        ; frame color = [bp - 1], bckg color = [bp - 2]
 
         mov ah, 0               ; TODO ???
         mov al, dh              ; ax = dh/2 * CONSOLE_WIDTH + dl/2 = (dh * CONSOLE_WIDTH + dl) / 2
@@ -81,7 +77,7 @@ PrintFrame:
         push dx
         mul cx
         pop dx
-        
+
         mov cl, dl              ; TODO ???
         mov ch, 0
         sar cx, 1
@@ -95,6 +91,8 @@ PrintFrame:
         mov cl, dl
 
 		push di
+        mov  al, [bp - 1]
+        mov  ah, [bp - 1]
 		call PrintRow
 		pop  di
 
@@ -111,6 +109,7 @@ PrintFrame:
         push cx
         push di
         mov cl, dl      ; arg cx = length
+        mov ax, [bp - 2]
         call PrintRow
         pop di
         pop cx
@@ -122,6 +121,8 @@ PrintFrame:
 
 		add bx, 3d
         mov cl, dl          ; arg cx = length
+		mov al, [bp - 1]
+        mov ah, [bp - 1]
 		call PrintRow
 
 
@@ -141,19 +142,25 @@ PrintFrame:
 ; Entry: 	es:di = start addr (es has to point to a segment of video memory 0b800h)
 ;           cx    = length
 ;		 	bx    = addr of line like '|_|' characterizing the characters of line
+;           ah    = border color, al = line color
 ; Exit:		none
-; Destr:	ax, cx, di
+; Destr:	cx, di
 ;-------------------------------------------------------------------------------------
 PrintRow:
-        mov ah, 0Fh
+        ; mov ah, 0Fh
+        push ax         ; save frame color
 
         mov al, [bx]
         stosw 
 
-		sub cx, 2d		; length -= 2 (for final char)
+		sub  cx, 2d		; length -= 2 (for final char)
+        pop  ax
+        push ax
+        mov  ah, al      ; = bckg color
         mov al, [bx + 1]
         rep stosw
 
+        pop ax          ; ah = frame color
         mov al, [bx + 2]
         stosw
 
@@ -204,7 +211,7 @@ PrintTextInFrame:
         sub  di, ax
         pop  cx
 
-        add si, 2               ; skip PARTITION_SYM and 
+        add si, 2               ; skip PARTITION_SYM and LINE_END_SYM sym
     
 
     print_next_line:
@@ -273,7 +280,7 @@ PrintLine:
 
 
 ;-------------------------------------------------------------------------------------
-; Counts the number of characters of a string formatted as '*al* ... *al*'
+; Counts the number of characters of a string formatted as '... *al*'
 ;
 ; Entry:	ds:si = source ptr
 ;           al    = border symbol
@@ -285,13 +292,15 @@ CountStrLen:
         mov cx, ds
         mov es, cx
 
-		add di, 1			; skip first '*al*'
 		push di
 
 		mov cx, MAX_STR_LEN
-		repne scasb
-
+		repne scasb         ; ... _ *al* _ _
+                            ;            ^ di pointers here
+        dec di
+        
 		mov cx, di
+
 		pop di
 		sub cx, di
 		
@@ -301,7 +310,7 @@ CountStrLen:
 
 
 ;-------------------------------------------------------------------------------------
-; Counts the number of lines of a string formatted as '"...|...|.. .."' ('|' separates lines)
+; Counts the number of lines of a string formatted as '"|...|...|.. ..|"' ('|' separates lines)
 ;
 ; Entry:	ds:si = source ptr
 ; Exit:		cx 	  = num of lines
@@ -313,13 +322,13 @@ CountNumOfLines:
         mov es, ax
 
 
-        mov ah, 0   ; counter of borders
-        mov al, LINE_ENDS
-        push di
+        push di si
+        inc  si      ; skip first '"'
+        mov  ah, 1   ; counter of borders (including first '"')
+        mov  al, LINE_END_SYM
         call CountStrLen
-        pop di
+        pop  si di
 
-        inc di      ; skip first '"'
         mov al, PARTITION_SYM
 
     count_borders:
@@ -346,7 +355,8 @@ CountNumOfLines:
 ; upper-left corner smoothly growing
 ;
 ; Entry: 	di = addr of center of the frame
-;           dl = length, dh = height, 
+;           dl = length,      dh = height
+;           ah = frame color, al = bckg color
 ;			bx = addr of line like '+-+|_|+-+' characterizing the characters of table
 ;           si = addr of line "..." which should be inside the frame
 ; Exit: 	none
@@ -370,7 +380,7 @@ PrintGrowingFrame:
         jmp count_growth_step
 
     animated_print_frame:
-        push cx bx dx di si
+        push ax bx cx dx di si
         
         call PrintFrame
 
@@ -379,7 +389,7 @@ PrintGrowingFrame:
 		mov  dx, 86A0h
 		int  15h
 
-        pop si di dx bx cx
+        pop si di dx cx bx ax
 
         add dl, 2
         add dh, 2
@@ -393,7 +403,7 @@ PrintGrowingFrame:
 
 ;-------------------------------------------------------------------------------------
 ; Converts a string ending with a space to a decimal number
-; after work of the func si indicates on the space
+; after work of the func si indicates on the next arg
 ;
 ; Entry:    ds:si = addr of string ending with a space
 ; Exit:     ax    = decimal number
@@ -407,14 +417,14 @@ AtoI_dec:
         xor ax, ax      ; ax = the final number
         xor bx, bx      ; bx = cur_digit
 
-    next_digit:
+    next_dec_digit:
         mov bl, ds:[si]   ; bx = cur_digit    
         inc si
         sub bx, '0'
 
         push ax
 
-        mov ax, 10
+        mov ax, 10d
         call Pow        ; ax = 10^cx
 
         mul bx          ; ax = cur_digit * 10 ^ (length - 1)
@@ -425,10 +435,65 @@ AtoI_dec:
         add ax, bx      ; final_num += cur_digit * 10 ^ (length - 1)
 
         dec cx
-        jns next_digit  ; cx < 0
+        jns next_dec_digit  ; cx < 0
+
+        inc si
 
         ret
         endp
+;-------------------------------------------------------------------------------------
+
+
+;-------------------------------------------------------------------------------------
+; Converts a string ending with a space to a hexadecimal number
+; after work of the func si indicates on the next arg
+;
+; Entry:    ds:si = addr of string ending with a space
+; Exit:     ax    = hexadecimal number
+; Destr:    ax, bx, cx, dx, si, es
+;-------------------------------------------------------------------------------------
+AtoI_hex:
+        mov al, ' '
+        call CountStrLen     ; cx = length
+        dec cx
+
+        xor ax, ax      ; ax = the final number
+        xor bx, bx      ; bx = cur_digit
+
+    next_hex_digit:
+        mov bl, ds:[si] ; bx = cur_digit    
+        inc si
+
+        cmp bx, '9'
+        ja is_letter
+        sub bx, '0'     ; is_digit
+        jmp digit_is_parsed
+
+    is_letter:
+        sub bx, 'A' - 0Ah
+
+    digit_is_parsed:
+
+        push ax
+
+        mov ax, 10h
+        call Pow        ; ax = 10h^cx
+
+        mul bx          ; ax = cur_digit * 10h ^ (length - 1)
+        mov bx, ax
+
+        pop ax
+
+        add ax, bx      ; final_num += cur_digit * 10h ^ (length - 1)
+
+        dec cx
+        jns next_hex_digit  ; cx < 0
+
+        inc si
+
+        ret
+        endp
+
 ;-------------------------------------------------------------------------------------
 
 
@@ -467,18 +532,18 @@ Pow:
 ;-------------------------------------------------------------------------------------
 ; Gets arguments from the command line
 ; Entry:    none
-; Exit:     dl = length, dh = height, 
-
-;			//bx = addr of line like '+-+|_|+-+' characterizing the characters of table
-;           //si = addr of line "..." which should be inside the frame
+; Exit:     dl = length,      dh = height, 
+;           ah = frame color, al = bckg color
+;			bx = addr of line like '+-+|_|+-+' characterizing the characters of table
+;           si = addr of line "..." which should be inside the frame
 ;
-; Destr:    
+; Destr:    ax, bx, cx, dx, si, es
 ;-------------------------------------------------------------------------------------
 GetArgs:
         mov si, CONSOLE_ARGS
 
         mov cl, ds:[si]
-        inc si          ; skip args len
+        add si, 2       ; skip args len and space
 
     ; get length    
         push cx         
@@ -488,9 +553,40 @@ GetArgs:
 
     ; get height
         push cx dx
-        call AtoI_dec   ; after that si pointers on the next arg
+        call AtoI_dec
         pop  dx cx
         mov  dh, al
+
+    ; get frame color
+        push cx dx
+        call AtoI_hex
+        pop  dx cx
+        mov  ah, al
+        xor  al, al
+
+    ; get bckg color
+        push cx dx
+
+        mov  ch, ah
+        push cx
+        call AtoI_hex
+        pop  cx
+        mov  ah, ch
+
+        pop  dx cx
+        
+    ; get table chars
+        inc si         ; skip LINE_END_SYM
+        mov bx, si
+        push ax
+        mov al, LINE_END_SYM
+        call CountStrLen
+        pop ax
+        add si, cx
+        add si, 2       ; + LINE_END_SYM + space
+
+    ; get line which should be inside the frame
+        ; si is already pointing at it
 
         ret
         endp
@@ -498,9 +594,7 @@ GetArgs:
 
 .data
 
-STRING 			db '"|HI GITLER 12345|6789|PAMPAMPAMPAMPAMPAMPAMPPAMP|ZZZZZZZZZZZZZZZZZZZZZZZZ|huizalupapenisher|rrrrrrrrr|govno|ARS_LOH_ARS_LOHARS_LOHOH|"'
-TABLE_CHARS		db 'ЙН»є єИНј'
-
-example         db '156 '
+STRING 			db '*/HI GITLER 12345/6789/PAMPAMPAMPAMPAMPAMPAMPPAMP/ZZZZZZZZZZZZZZZZZZZZZZZZ/huizalupapenisher/rrrrrrrrr/aaaaaaa/bbbbbb/*'
+TABLE_CHARS		db '*�ͻ� ��ͼ*'
 
 end Start
