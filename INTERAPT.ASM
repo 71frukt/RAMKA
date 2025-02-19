@@ -18,23 +18,32 @@ CENTER_ADDR         equ CONSOLE_WIDTH * (CONSOLE_HEIGHT / 2 + CONSOLE_MOVEMENT) 
 FRAME_WIDTH    	    equ 50d
 FRAME_HEIGHT        equ 20d
 
-REGS_FRAME_WIDTH         equ 13d
-REGS_FRAME_HEIGHT        equ 8d
-REGS_FRAME_BORDER_COLOR  equ 00001110b
-REGS_FRAME_BCKG_COLOR    equ 00001110b
+
+REGS_FRAME_WIDTH            equ 13d
+REGS_FRAME_HEIGHT           equ 8d
+REGS_FRAME_BORDER_COLOR     equ 00001110b
+REGS_FRAME_BCKG_COLOR       equ 00001110b
+
+SHIFT_LU2CENTER_REGS_FRAME  equ CONSOLE_WIDTH * (REGS_FRAME_HEIGHT / 2) + (REGS_FRAME_WIDTH / 2)     ; in pixels
 
 
-RIGHT_UP_CORNER     equ (CONSOLE_WIDTH - (REGS_FRAME_WIDTH - REGS_FRAME_WIDTH / 2) + CONSOLE_WIDTH * (REGS_FRAME_HEIGHT / 2))
+CONSOLE_RIGHT_UP_CORNER  equ CONSOLE_WIDTH - REGS_FRAME_WIDTH
+
+MOVE_UP_KEY         equ 11h         ; 'W' press scan code
+MOVE_LEFT_KEY       equ 1Eh         ; 'A' press scan code
+MOVE_DOWN_KEY       equ 1Fh         ; 'S' press scan code
+MOVE_RIGHT_KEY      equ 20h         ; 'D' press scan code
+
 
 PARTITION_SYM       equ '/'
 LINE_END_SYM        equ '*'
 
 MAX_STR_LEN         equ 150d
 
-REGISTERS_KEY_PRESS    equ 13h     ; R    scan code  (=  0001 0011)
-REGISTERS_KEY_RELEASE  equ 93h     ; R    scan code  (=  1001 0011)
-CTRL_KEY_PRESS         equ 1Dh     ; ctrl scan code  (=  0001 1101)
-CTRL_KEY_RELEASE       equ 9Dh     ; ctrl scan code  (=  1001 1101)
+REGISTERS_KEY_PRESS    equ 13h      ; 'R'    press   scan code  (=  0001 0011)
+REGISTERS_KEY_RELEASE  equ 93h      ; 'R'    release scan code  (=  1001 0011)
+CTRL_KEY_PRESS         equ 1Dh      ; 'ctrl' press   scan code  (=  0001 1101)
+CTRL_KEY_RELEASE       equ 9Dh      ; 'ctrl' release scan code  (=  1001 1101)
 
 
 
@@ -112,26 +121,70 @@ InterceptKeyboard   proc
 
     check_ctrl_release:
         cmp al, CTRL_KEY_RELEASE
-        jne check_reg_key_press
+        jne check_access_to_management
 
         mov al, 0
         mov byte ptr CTRL_KEY_FLAG, al
         jmp TransferControlToInt_09h
 
+    ; control is not available without pressing the 'ctrl'
+    check_access_to_management:
+        mov ah, CTRL_KEY_FLAG
+        cmp ah, 1
+        jne TransferControlToInt_09h
 
+; Checking whether the frame needs to be moved
+;----------------------------------------------------
+    check_move_up:
+        cmp al, MOVE_UP_KEY
+        jne check_move_down
+
+        mov ax, REG_FRAME_CENTER_ADDR
+        sub ax, CONSOLE_WIDTH
+        mov REG_FRAME_CENTER_ADDR, ax
+        jmp TransferControlToInt_09h
+
+    check_move_down:
+        cmp al, MOVE_DOWN_KEY
+        jne check_move_left
+
+        mov ax, REG_FRAME_CENTER_ADDR
+        add ax, CONSOLE_WIDTH
+        mov REG_FRAME_CENTER_ADDR, ax
+        jmp TransferControlToInt_09h
+
+    check_move_left:
+        cmp al, MOVE_LEFT_KEY
+        jne check_move_right
+
+        mov ax, REG_FRAME_CENTER_ADDR
+        dec ax
+        mov REG_FRAME_CENTER_ADDR, ax
+        jmp TransferControlToInt_09h
+
+    check_move_right:
+        cmp al, MOVE_RIGHT_KEY
+        jne check_reg_key_press
+
+        mov ax, REG_FRAME_CENTER_ADDR
+        inc ax
+        mov REG_FRAME_CENTER_ADDR, ax
+        jmp TransferControlToInt_09h
+;----------------------------------------------------
+
+
+; Checking whether the frame needs to be drawn
+;----------------------------------------------------
     check_reg_key_press:
         cmp al, REGISTERS_KEY_PRESS
         jne TransferControlToInt_09h
 
-        mov al, CTRL_KEY_FLAG
-        cmp al, 1
-        jne TransferControlToInt_09h
 
         mov al, FRAME_FLAG
         xor al, 1
         mov FRAME_FLAG, al
         ; jmp TransferControlToInt_09h
-
+;----------------------------------------------------
 
 TransferControlToInt_09h:
         pop ds es si di dx cx bx ax
@@ -142,6 +195,52 @@ TransferControlToInt_09h:
 
         endp
 ;-------------------------------------------------------------------------------------
+
+
+;-------------------------------------------------------------------------------------
+; Stores the one border into memory
+; Entry:    ds:si = destination
+;           es:di = source
+;           bx    = step
+;           cx    = count of pixels
+; Exit:     none
+; Destr:    ax, di, si
+;-------------------------------------------------------------------------------------
+StoreFrameBorder:
+    next_pixel:
+        mov ax, word ptr es:[di]
+        mov word ptr ds:[si], ax
+
+        add si, bx
+        add di, bx
+
+        loop next_pixel
+
+        ret
+        endp
+;-------------------------------------------------------------------------------------
+
+
+;-------------------------------------------------------------------------------------
+; Stores the all borders into memory
+; Entry:    es = VIDEOSEG
+;           
+; Exit:     none
+; Destr:    
+;-------------------------------------------------------------------------------------
+StoreFrameFringing:
+    ; store high border
+        mov di, REG_FRAME_CENTER_ADDR
+
+
+        lea si, HIGH_BORDER
+        mov bx, 1
+        mov cx, REGS_FRAME_WIDTH
+
+
+
+        ret
+        endp
 
 
 ;-------------------------------------------------------------------------------------
@@ -229,7 +328,7 @@ TransferControlToTimer:
 ; Prints the frame [length x height] to the console based on the coordinates of the 
 ; 	upper-left corner
 ;
-; Entry: 	di = addr of center of the frame
+; Entry: 	di = addr of l-u corner of the frame
 ;           dl = length,      dh = height
 ;           ah = frame color, al = bckg color
 ;			bx = addr of line like '+-+|_|+-+' characterizing the characters of table
@@ -245,25 +344,25 @@ PrintFrame:
         mov ss:[bp - 2], ax     ; frame color = [bp - 1], bckg color = [bp - 2]
         mov ss:[bp - 4], di
 
-        mov ah, 0               ; TODO ???
-        mov al, dh              ; ax = dh/2 * CONSOLE_WIDTH + dl/2 = (dh * CONSOLE_WIDTH + dl) / 2
-        sar ax, 1
+        ; xor ax, ax
+        ; mov al, dh              ; ax = dh/2 * CONSOLE_WIDTH + dl/2 = (dh * CONSOLE_WIDTH + dl) / 2
+        ; sar ax, 1
 
-        mov cx, CONSOLE_WIDTH
-        push dx
-        mul cx
-        pop dx
+        ; mov cx, CONSOLE_WIDTH
+        ; push dx
+        ; mul cx
+        ; pop dx
 
-        mov cl, dl              ; TODO ???
-        mov ch, 0
-        sar cx, 1
+        ; xor ch, ch
+        ; mov cl, dl              ; TODO ???
+        ; sar cx, 1
 
-        add ax, cx              ; ax = offset from the upper-left edge of the frame to the center
+        ; add ax, cx              ; ax = offset from the upper-left edge of the frame to the center
 
-        sub di, ax              ; addr of the upper-left edge of the frame
+        ; sub di, ax              ; addr of the upper-left edge of the frame
         sal di, 1               ; *=2 (1 character = 2 bytes)
 
-        mov ch, 0
+        xor ch, ch
         mov cl, dl
 
 		push di
@@ -293,7 +392,7 @@ PrintFrame:
         add di, CONSOLE_WIDTH * 2d
 
     test2:
-		loop  loop2
+		loop loop2
 
 
 		add bx, 3d
@@ -303,7 +402,6 @@ PrintFrame:
 		call PrintRow
 
         mov di, ss:[bp - 4]
-        sal di, 1
         call PrintTextInFrame
 
         leave
@@ -348,13 +446,34 @@ PrintRow:
 ;-------------------------------------------------------------------------------------
 ; Prints a text in frame
 ; 
-; Entry:    di    = addr of center       of the frame
+; Entry:    di    = addr of l-u corner   of the frame
 ;           dl    = length, dh = height  of the frame
 ;           ds:si = addr of line "..." which should be inside the frame
 ; Exit:     none
 ; Destr:    ax, cx, di, si
 ;-------------------------------------------------------------------------------------
 PrintTextInFrame:
+        ; xor ax, ax
+        ; mov al, dh              ; ax = dh/2 * CONSOLE_WIDTH + dl/2 = (dh * CONSOLE_WIDTH + dl) / 2
+        ; sar ax, 1
+
+        ; mov  cx, CONSOLE_WIDTH
+        ; push dx
+        ; mul  cx
+        ; pop  dx
+
+        ; xor ch, ch
+        ; mov cl, dl              ; TODO ???
+        ; sar cx, 1
+
+        ; add ax, cx              ; ax = offset from the upper-left edge of the frame to the center
+
+        ; sub di, ax              ; addr of the upper-left edge of the frame
+        ; sal di, 1               ; *=2 (1 character = 2 bytes)
+
+        add di, SHIFT_LU2CENTER_REGS_FRAME
+        sal di, 1               ; 1 pixel = 2 bytes
+
         push di es
         call CountNumOfLines    ; cx = count of lines
         pop  es di
@@ -529,7 +648,7 @@ CountNumOfLines:
 ; Prints the frame [length x height] to the console based on the coordinates of the 
 ; upper-left corner smoothly growing
 ;
-; Entry: 	di = addr of center of the frame
+; Entry: 	di = addr of l-u corner of the frame
 ;           dl = length,      dh = height
 ;           ah = frame color, al = bckg color
 ;			bx = addr of line like '+-+|_|+-+' characterizing the characters of table
@@ -839,14 +958,22 @@ DI_INFO     db '0000'
             db '/si = '
 SI_INFO     db '0000/*'
 
-REG_FRAME_CENTER_ADDR   dw RIGHT_UP_CORNER    ; addr of pixel
 
-REGS_KEY_FLAG  db 0
-CTRL_KEY_FLAG  db 0
-FRAME_FLAG     db 0
+REG_FRAME_CENTER_ADDR   dw CONSOLE_RIGHT_UP_CORNER          ; addr of pixel
 
-FRAME_STYLE_1	    db '*…Õª∫ ∫»Õº*'
-FRAME_STYLE_2	    db '*+-+l l+-+*'
+; frame borders info
+HIGH_BORDER     db '0123456789123', '0123456789123' ; REGS_FRAME_WIDTH
+LOW_BORDER      db '0123456789123', '0123456789123' ; REGS_FRAME_WIDTH
+LEFT_BORDER     db '01234567'     , '01234567'      ; REGS_FRAME_HEIGHT
+RIGHT_BORDER    db '01234567'     , '01234567'      ; REGS_FRAME_HEIGHT
+
+
+REGS_KEY_FLAG   db 0
+CTRL_KEY_FLAG   db 0
+FRAME_FLAG      db 0
+
+FRAME_STYLE_1   db '*…Õª∫ ∫»Õº*'
+FRAME_STYLE_2   db '*+-+l l+-+*'
 
 EOP:
 end Start
