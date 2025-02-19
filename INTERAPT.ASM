@@ -18,26 +18,27 @@ CENTER_ADDR         equ CONSOLE_WIDTH * (CONSOLE_HEIGHT / 2 + CONSOLE_MOVEMENT) 
 FRAME_WIDTH    	    equ 50d
 FRAME_HEIGHT        equ 20d
 
-REGS_FRAME_WIDTH    equ 13d
-REGS_FRAME_HEIGHT   equ 8d
+REGS_FRAME_WIDTH         equ 13d
+REGS_FRAME_HEIGHT        equ 8d
 REGS_FRAME_BORDER_COLOR  equ 00001110b
 REGS_FRAME_BCKG_COLOR    equ 00001110b
 
 
-RIGHT_UP_ADDR       equ (CONSOLE_WIDTH - (REGS_FRAME_WIDTH - REGS_FRAME_WIDTH / 2) + CONSOLE_WIDTH * (REGS_FRAME_HEIGHT / 2))
+RIGHT_UP_CORNER     equ (CONSOLE_WIDTH - (REGS_FRAME_WIDTH - REGS_FRAME_WIDTH / 2) + CONSOLE_WIDTH * (REGS_FRAME_HEIGHT / 2))
 
 PARTITION_SYM       equ '/'
 LINE_END_SYM        equ '*'
 
 MAX_STR_LEN         equ 150d
 
-REGISTERS_INFO_KEY  equ 13h     ; R  scan code
+REGISTERS_KEY_PRESS    equ 13h     ; R    scan code  (=  0001 0011)
+REGISTERS_KEY_RELEASE  equ 93h     ; R    scan code  (=  1001 0011)
+CTRL_KEY_PRESS         equ 1Dh     ; ctrl scan code  (=  0001 1101)
+CTRL_KEY_RELEASE       equ 9Dh     ; ctrl scan code  (=  1001 1101)
 
-REGISTERS_INFO_ON   equ 1
-REGISTERS_INFO_OFF  equ 0
 
 
-
+;-------------------------------------------------------------------------------------
 Start:
         xor ax, ax
         mov es, ax
@@ -54,6 +55,7 @@ Start:
         mov es:[bx + 2], ax
         sti
 
+;-------------------------------------------------------------------------------------
 
         xor ax, ax
         mov es, ax
@@ -70,6 +72,7 @@ Start:
         mov es:[bx + 2], ax
         sti
     
+;-------------------------------------------------------------------------------------
 
         int 09h
 
@@ -78,6 +81,8 @@ Start:
         shr dx, 4
         inc dx
         int 21h
+;-------------------------------------------------------------------------------------
+
 
 
 ;-------------------------------------------------------------------------------------
@@ -90,19 +95,43 @@ Start:
 ; Destr: none
 ;-------------------------------------------------------------------------------------
 InterceptKeyboard   proc
-
         push ax bx cx dx di si es ds
 
         push cs
         pop ds
 
         in  al, 60h
-        cmp al, REGISTERS_INFO_KEY
+
+    check_ctrl_press:
+        cmp al, CTRL_KEY_PRESS
+        jne check_ctrl_release
+
+        mov al, 1
+        mov byte ptr CTRL_KEY_FLAG, al
+        jmp TransferControlToInt_09h
+
+    check_ctrl_release:
+        cmp al, CTRL_KEY_RELEASE
+        jne check_reg_key_press
+
+        mov al, 0
+        mov byte ptr CTRL_KEY_FLAG, al
+        jmp TransferControlToInt_09h
+
+
+    check_reg_key_press:
+        cmp al, REGISTERS_KEY_PRESS
+        jne TransferControlToInt_09h
+
+        mov al, CTRL_KEY_FLAG
+        cmp al, 1
         jne TransferControlToInt_09h
 
         mov al, FRAME_FLAG
         xor al, 1
-        mov byte ptr FRAME_FLAG, al
+        mov FRAME_FLAG, al
+        ; jmp TransferControlToInt_09h
+
 
 TransferControlToInt_09h:
         pop ds es si di dx cx bx ax
@@ -116,7 +145,7 @@ TransferControlToInt_09h:
 
 
 ;-------------------------------------------------------------------------------------
-; Intercepts timer interrupt and if FRAME_FLAG = 1 prints a frame with registers
+; Intercepts timer interrupt and if FRAME_KEY_FLAG = 1 prints a frame with registers
 ; Entry: es = VIDEOSEG
 ; Exit:  none
 ; Destr: none
@@ -128,8 +157,9 @@ InterceptTimer proc
         pop ds
 
         mov al, FRAME_FLAG
-        cmp al, REGISTERS_INFO_ON
+        cmp al, 1
         jne TransferControlToTimer
+
 
         push si
         push di
@@ -174,7 +204,7 @@ InterceptTimer proc
         mov di, VIDEOSEG
 		mov es, di
         
-        mov di, RIGHT_UP_ADDR
+        mov di, REG_FRAME_CENTER_ADDR
         lea si, REGISTERS_INFO_STR
 
         
@@ -789,8 +819,6 @@ GetArgs:
 
 .data
 
-STRING 	    db '*/HI GITLER 12345/6789/PAMPAMPAMPAMPAMPAMPAMPPAMP/ZZZZZZZZZZZZZZZZZZZZZZZZ/huizalupapenisher/rrrrrrrrr/aaaaaaa/bbbbbb/*'
-
 
 REGISTERS_INFO_STR: 
             db '*/ax = '
@@ -811,8 +839,11 @@ DI_INFO     db '0000'
             db '/si = '
 SI_INFO     db '0000/*'
 
-FRAME_FLAG  db 0
+REG_FRAME_CENTER_ADDR   dw RIGHT_UP_CORNER    ; addr of pixel
 
+REGS_KEY_FLAG  db 0
+CTRL_KEY_FLAG  db 0
+FRAME_FLAG     db 0
 
 FRAME_STYLE_1	    db '*…Õª∫ ∫»Õº*'
 FRAME_STYLE_2	    db '*+-+l l+-+*'
