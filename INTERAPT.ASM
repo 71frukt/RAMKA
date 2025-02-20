@@ -19,15 +19,15 @@ FRAME_WIDTH    	    equ 50d
 FRAME_HEIGHT        equ 20d
 
 
-REGS_FRAME_WIDTH            equ 13d
-REGS_FRAME_HEIGHT           equ 8d
-REGS_FRAME_BORDER_COLOR     equ 00001110b
-REGS_FRAME_BCKG_COLOR       equ 00001110b
+REGFRAME_WIDTH            equ 13d
+REGFRAME_HEIGHT           equ 8d
+REGFRAME_BORDER_COLOR     equ 00001110b
+REGFRAME_BCKG_COLOR       equ 00001110b
 
-SHIFT_LU2CENTER_REGS_FRAME  equ CONSOLE_WIDTH * (REGS_FRAME_HEIGHT / 2) + (REGS_FRAME_WIDTH / 2)     ; in pixels
+SHIFT_LU2CENTER_REGFRAME  equ CONSOLE_WIDTH * (REGFRAME_HEIGHT / 2) + (REGFRAME_WIDTH / 2)     ; in pixels
 
 
-CONSOLE_RIGHT_UP_CORNER  equ CONSOLE_WIDTH - REGS_FRAME_WIDTH
+CONSOLE_RIGHT_UP_CORNER     equ CONSOLE_WIDTH - REGFRAME_WIDTH
 
 MOVE_UP_KEY         equ 11h         ; 'W' press scan code
 MOVE_LEFT_KEY       equ 1Eh         ; 'A' press scan code
@@ -81,9 +81,32 @@ Start:
         mov es:[bx + 2], ax
         sti
     
+        mov ax, VIDEOSEG
+        mov es, ax
+
 ;-------------------------------------------------------------------------------------
 
-        int 09h
+
+;EXAMPLE=================================
+        ; mov di, REGFRAME_ADDR
+        ; lea si, REGFRAME_OBSCURED_SPACE
+        ; mov dl, REGFRAME_WIDTH
+        ; mov dh, REGFRAME_HEIGHT
+
+        ; call SaveFrameObscuredSpace 
+
+    ; cycle:
+    ;     int 08h
+    ;     int 09h
+
+    ;     mov  ah, 86h
+	; 	mov  cx, 0Fh	; cx:dx = 186A0h = 0.1 * 10^6 mcs = 0.1 s
+	; 	mov  dx, 86A0h
+	; 	int  15h
+    ; jmp cycle
+;EXAMPLE=================================
+
+
 
         mov ax, 3100h
         mov dx, offset EOP
@@ -109,7 +132,11 @@ InterceptKeyboard   proc
         push cs
         pop ds
 
-        in  al, 60h
+        mov ax, VIDEOSEG
+        mov es, ax
+
+        in  al, 60h                           ;TODO !!!!!!!
+        ; mov al, MOVE_DOWN_KEY
 
     check_ctrl_press:
         cmp al, CTRL_KEY_PRESS
@@ -131,7 +158,7 @@ InterceptKeyboard   proc
     check_access_to_management:
         mov ah, CTRL_KEY_FLAG
         cmp ah, 1
-        jne TransferControlToInt_09h
+        jne TransferControlToInt_09h      ;TODO!!! ‡ÒÍÓÏÏÂÌÚËÚ¸
 
 ; Checking whether the frame needs to be moved
 ;----------------------------------------------------
@@ -139,36 +166,32 @@ InterceptKeyboard   proc
         cmp al, MOVE_UP_KEY
         jne check_move_down
 
-        mov ax, REG_FRAME_CENTER_ADDR
-        sub ax, CONSOLE_WIDTH
-        mov REG_FRAME_CENTER_ADDR, ax
+        mov ax, - CONSOLE_WIDTH
+        call MoveRegframe
         jmp TransferControlToInt_09h
 
     check_move_down:
         cmp al, MOVE_DOWN_KEY
         jne check_move_left
 
-        mov ax, REG_FRAME_CENTER_ADDR
-        add ax, CONSOLE_WIDTH
-        mov REG_FRAME_CENTER_ADDR, ax
+        mov ax, CONSOLE_WIDTH
+        call MoveRegframe
         jmp TransferControlToInt_09h
 
     check_move_left:
         cmp al, MOVE_LEFT_KEY
         jne check_move_right
 
-        mov ax, REG_FRAME_CENTER_ADDR
-        dec ax
-        mov REG_FRAME_CENTER_ADDR, ax
+        mov ax, -1
+        call MoveRegframe
         jmp TransferControlToInt_09h
 
     check_move_right:
         cmp al, MOVE_RIGHT_KEY
         jne check_reg_key_press
 
-        mov ax, REG_FRAME_CENTER_ADDR
-        inc ax
-        mov REG_FRAME_CENTER_ADDR, ax
+        mov ax, 1
+        call MoveRegframe
         jmp TransferControlToInt_09h
 ;----------------------------------------------------
 
@@ -183,6 +206,18 @@ InterceptKeyboard   proc
         mov al, FRAME_FLAG
         xor al, 1
         mov FRAME_FLAG, al
+
+        cmp FRAME_FLAG, 1
+        jne TransferControlToInt_09h
+
+    ; save obscured space if  frame off -> frame on
+        mov di, REGFRAME_ADDR
+        lea si, REGFRAME_OBSCURED_SPACE
+        mov dl, REGFRAME_WIDTH
+        mov dh, REGFRAME_HEIGHT
+
+        call SaveFrameObscuredSpace 
+
         ; jmp TransferControlToInt_09h
 ;----------------------------------------------------
 
@@ -198,49 +233,202 @@ TransferControlToInt_09h:
 
 
 ;-------------------------------------------------------------------------------------
-; Stores the one border into memory
-; Entry:    ds:si = destination
-;           es:di = source
-;           bx    = step
-;           cx    = count of pixels
-; Exit:     none
-; Destr:    ax, di, si
+; Displaces REGFRAME_ADDR to the specified value. 
+;  It prints on the screen saved earlier REGFRAME_OBSCURED_SPACE, displaces 
+;  REGFRAME_ADDR, and saves new REGFRAME_OBSCURED_SPACE. After that, you can draw
+;  the frame in a new position.
+; 
+; Entry:    ax = shift of REGFRAME_ADDR
+; Exit:     new REGFRAME_ADDR
+; Destr:    none
 ;-------------------------------------------------------------------------------------
-StoreFrameBorder:
-    next_pixel:
+MoveRegframe:
+        mov di, REGFRAME_ADDR
+        lea si, REGFRAME_OBSCURED_SPACE
+        mov dl, REGFRAME_WIDTH
+        mov dh, REGFRAME_HEIGHT
+
+        push ax
+        call LoadFrameObscuredSpace
+        pop  ax
+        add di, ax
+        mov REGFRAME_ADDR, di
+
+        call SaveFrameObscuredSpace
+
+        ret
+        endp
+;-------------------------------------------------------------------------------------
+
+
+;-------------------------------------------------------------------------------------
+; Saves the pixels that are under the frame
+; Entry:    es:di = source = addr (in pixels, not bytes) of l-u corner of the frame
+;                                                             // es = VIDEOSEG
+;           ds:si = destination
+;           dl = frame length, dh = frame height
+; Exit:     none
+; Destr:    ax, cx
+;-------------------------------------------------------------------------------------
+SaveFrameObscuredSpace:
+        push si di
+
+        sal di, 1
+        sal si, 1
+
+        xor cx, cx
+
+        mov cl, dh
+
+    save_next_line:
+        push di cx
+        mov  cl, dl
+
+    save_next_pixel:
         mov ax, word ptr es:[di]
         mov word ptr ds:[si], ax
+        add di, 2
+        add si, 2
 
-        add si, bx
-        add di, bx
+        loop save_next_pixel
+        pop cx di
 
-        loop next_pixel
+        ; add si, CONSOLE_WIDTH * 2
+        add di, CONSOLE_WIDTH * 2
 
+        loop save_next_line
+
+        pop di si
         ret
         endp
 ;-------------------------------------------------------------------------------------
 
 
 ;-------------------------------------------------------------------------------------
-; Stores the all borders into memory
-; Entry:    es = VIDEOSEG
-;           
+; Loads the pixels that are under the frame
+; Entry:    es:di = destination = addr (in pixels, not bytes) of l-u corner of the frame
+;                                                             // es = VIDEOSEG
+;           ds:si = source
+;           dl = frame length, dh = frame height
 ; Exit:     none
-; Destr:    
+; Destr:    ax, cx
 ;-------------------------------------------------------------------------------------
-StoreFrameFringing:
-    ; store high border
-        mov di, REG_FRAME_CENTER_ADDR
+LoadFrameObscuredSpace:
+        push si di
+
+        sal di, 1
+        sal si, 1
+
+        xor cx, cx
+        mov cl, dh
+
+    load_next_line:
+        push di cx
+        mov  cl, dl
+
+    load_next_pixel:
+        mov ax, word ptr ds:[si]
+        mov word ptr es:[di], ax
+        add di, 2
+        add si, 2
+
+        loop load_next_pixel
+        pop cx di
+
+        ; add si, CONSOLE_WIDTH * 2
+        add di, CONSOLE_WIDTH * 2
+
+        loop load_next_line
 
 
-        lea si, HIGH_BORDER
-        mov bx, 1
-        mov cx, REGS_FRAME_WIDTH
-
-
-
+        pop di si
         ret
         endp
+;-------------------------------------------------------------------------------------
+
+
+; /useless
+; ;-------------------------------------------------------------------------------------
+; ; Stores the one border into memory
+; ; Entry:    es:di = source
+; ;           ds:si = destination           
+; ;           bx    = step
+; ;           cx    = count of pixels
+; ; Exit:     none
+; ; Destr:    ax, di, si
+; ;-------------------------------------------------------------------------------------
+; StoreFrameBorder:
+;     next_pixel:
+;         mov ax, word ptr es:[di]
+;         mov word ptr ds:[si], ax
+
+;         add di, bx
+;         add si, 2
+
+;         loop next_pixel
+
+;         ret
+;         endp
+; ;-------------------------------------------------------------------------------------
+
+
+; ;-------------------------------------------------------------------------------------
+; ; Stores the all borders into memory
+; ; Entry:    es = VIDEOSEG
+; ;           
+; ; Exit:     none
+; ; Destr:    ax, bx, cx, dx, si, di
+; ;-------------------------------------------------------------------------------------
+; StoreFrameFringing:
+;     ; store high border     
+;         mov di, REGFRAME_ADDR 
+;         sal di, 1                   ; 1 pixel = 2 bytes
+
+;         lea si, HIGH_BORDER
+;         mov bx, 2                   ; step = 1 word
+;         mov cx, REGFRAME_WIDTH
+
+;         call StoreFrameBorder
+
+;     ; store low border
+;         mov di, REGFRAME_HEIGHT - 1
+;         mov ax, CONSOLE_WIDTH
+;         mul di
+;         add ax, REGFRAME_ADDR
+;         mov di, ax
+;         sal di, 1                   ; 1 pixel = 2 bytes
+
+;         lea si, LOW_BORDER
+;         mov bx, 2                   ; step = 1 word
+;         mov cx, REGFRAME_WIDTH
+
+;         call StoreFrameBorder
+
+;     ; store left border
+;         mov di, REGFRAME_ADDR 
+;         sal di, 1                   ; 1 pixel = 2 bytes
+
+;         lea si, LEFT_BORDER
+;         mov bx, CONSOLE_WIDTH * 2   ; step = 1 pixel down = console_width
+;         mov cx, REGFRAME_HEIGHT
+
+;         call StoreFrameBorder
+
+;     ; store right border
+;         mov di, REGFRAME_ADDR
+;         add di, REGFRAME_WIDTH - 1
+;         sal di, 1                   ; 1 pixel = 2 bytes
+
+;         lea si, RIGHT_BORDER
+;         mov bx, CONSOLE_WIDTH * 2   ; step = 1 pixel down = console_width
+;         mov cx, REGFRAME_HEIGHT
+
+;         call StoreFrameBorder
+
+;         ret
+;         endp
+; ;-------------------------------------------------------------------------------------
+; ; useless/
 
 
 ;-------------------------------------------------------------------------------------
@@ -294,16 +482,16 @@ InterceptTimer proc
         call ItoA_hex
 
 
-        mov dl, REGS_FRAME_WIDTH
-        mov dh, REGS_FRAME_HEIGHT
-        mov ah, REGS_FRAME_BORDER_COLOR
-        mov al, REGS_FRAME_BCKG_COLOR
+        mov dl, REGFRAME_WIDTH
+        mov dh, REGFRAME_HEIGHT
+        mov ah, REGFRAME_BORDER_COLOR
+        mov al, REGFRAME_BCKG_COLOR
         lea bx, FRAME_STYLE_1 + 1     ; skip LINE_END_SYM
 
         mov di, VIDEOSEG
 		mov es, di
         
-        mov di, REG_FRAME_CENTER_ADDR
+        mov di, REGFRAME_ADDR
         lea si, REGISTERS_INFO_STR
 
         
@@ -471,7 +659,7 @@ PrintTextInFrame:
         ; sub di, ax              ; addr of the upper-left edge of the frame
         ; sal di, 1               ; *=2 (1 character = 2 bytes)
 
-        add di, SHIFT_LU2CENTER_REGS_FRAME
+        add di, SHIFT_LU2CENTER_REGFRAME
         sal di, 1               ; 1 pixel = 2 bytes
 
         push di es
@@ -959,21 +1147,19 @@ DI_INFO     db '0000'
 SI_INFO     db '0000/*'
 
 
-REG_FRAME_CENTER_ADDR   dw CONSOLE_RIGHT_UP_CORNER          ; addr of pixel
+REGFRAME_ADDR   dw CONSOLE_RIGHT_UP_CORNER          ; addr of pixel in left-up corner
 
-; frame borders info
-HIGH_BORDER     db '0123456789123', '0123456789123' ; REGS_FRAME_WIDTH
-LOW_BORDER      db '0123456789123', '0123456789123' ; REGS_FRAME_WIDTH
-LEFT_BORDER     db '01234567'     , '01234567'      ; REGS_FRAME_HEIGHT
-RIGHT_BORDER    db '01234567'     , '01234567'      ; REGS_FRAME_HEIGHT
-
+REGFRAME_OBSCURED_SPACE  dw (REGFRAME_WIDTH * REGFRAME_HEIGHT) dup (0)      ; the space that the frame obscures 
 
 REGS_KEY_FLAG   db 0
 CTRL_KEY_FLAG   db 0
+
 FRAME_FLAG      db 0
 
 FRAME_STYLE_1   db '*…Õª∫ ∫»Õº*'
 FRAME_STYLE_2   db '*+-+l l+-+*'
+
+STRING          db '*/gfgfg/fgfg/fgsdadsf/*'
 
 EOP:
 end Start
