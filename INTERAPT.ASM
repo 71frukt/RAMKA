@@ -6,49 +6,52 @@
 org 100h
 
 
-VIDEOSEG	        equ 0b800h
-CONSOLE_ARGS        equ 80h
+VIDEOSEG	                equ 0b800h
+CONSOLE_ARGS                equ 80h
 
-CONSOLE_WIDTH       equ 80d
-CONSOLE_HEIGHT      equ 25d
-CONSOLE_MOVEMENT    equ 2d
+CONSOLE_WIDTH               equ 80d
+CONSOLE_HEIGHT              equ 25d
+CONSOLE_MOVEMENT            equ 2d
 
-CENTER_ADDR         equ CONSOLE_WIDTH * (CONSOLE_HEIGHT / 2 + CONSOLE_MOVEMENT) + CONSOLE_WIDTH / 2
+CENTER_ADDR                 equ CONSOLE_WIDTH * (CONSOLE_HEIGHT / 2 + CONSOLE_MOVEMENT) + CONSOLE_WIDTH / 2
 
-FRAME_WIDTH    	    equ 50d
-FRAME_HEIGHT        equ 20d
+FRAME_WIDTH    	            equ 50d
+FRAME_HEIGHT                equ 20d
 
 
-REGFRAME_WIDTH            equ 13d
-REGFRAME_HEIGHT           equ 8d
-REGFRAME_BORDER_COLOR     equ 00001110b
-REGFRAME_BCKG_COLOR       equ 00001110b
+REGFRAME_WIDTH              equ 13d
+REGFRAME_HEIGHT             equ 8d
+REGFRAME_BORDER_COLOR       equ 00001110b
+REGFRAME_BCKG_COLOR         equ 00001110b
 
-SHIFT_LU2CENTER_REGFRAME  equ CONSOLE_WIDTH * (REGFRAME_HEIGHT / 2) + (REGFRAME_WIDTH / 2)     ; in pixels
+SHIFT_LU2CENTER_REGFRAME    equ CONSOLE_WIDTH * (REGFRAME_HEIGHT / 2) + (REGFRAME_WIDTH / 2)     ; in pixels
 
 
 CONSOLE_RIGHT_UP_CORNER     equ CONSOLE_WIDTH - REGFRAME_WIDTH
 
-MOVE_UP_KEY         equ 11h         ; 'W' press scan code
-MOVE_LEFT_KEY       equ 1Eh         ; 'A' press scan code
-MOVE_DOWN_KEY       equ 1Fh         ; 'S' press scan code
-MOVE_RIGHT_KEY      equ 20h         ; 'D' press scan code
+MOVE_UP_KEY                 equ 11h         ; 'W' press scan code
+MOVE_LEFT_KEY               equ 1Eh         ; 'A' press scan code
+MOVE_DOWN_KEY               equ 1Fh         ; 'S' press scan code
+MOVE_RIGHT_KEY              equ 20h         ; 'D' press scan code
 
 
-PARTITION_SYM       equ '/'
-LINE_END_SYM        equ '*'
+PARTITION_SYM               equ '/'
+LINE_END_SYM                equ '*'
 
-MAX_STR_LEN         equ 150d
+MAX_STR_LEN                 equ 150d
 
-REGISTERS_KEY_PRESS    equ 13h      ; 'R'    press   scan code  (=  0001 0011)
-REGISTERS_KEY_RELEASE  equ 93h      ; 'R'    release scan code  (=  1001 0011)
-CTRL_KEY_PRESS         equ 1Dh      ; 'ctrl' press   scan code  (=  0001 1101)
-CTRL_KEY_RELEASE       equ 9Dh      ; 'ctrl' release scan code  (=  1001 1101)
+REGISTERS_KEY_PRESS         equ 13h      ; 'R'    press   scan code  (=  0001 0011)
+REGISTERS_KEY_RELEASE       equ 93h      ; 'R'    release scan code  (=  1001 0011)
+CTRL_KEY_PRESS              equ 1Dh      ; 'ctrl' press   scan code  (=  0001 1101)
+CTRL_KEY_RELEASE            equ 9Dh      ; 'ctrl' release scan code  (=  1001 1101)
 
 
 
 ;-------------------------------------------------------------------------------------
-Start:
+Start:                              ; Записать в таблицу прерываний свои функции
+
+;-------------------------------------------------------------------------------------
+    ; прерывание клавиатуры
         xor ax, ax
         mov es, ax
         mov bx, 09h * 4
@@ -65,7 +68,7 @@ Start:
         sti
 
 ;-------------------------------------------------------------------------------------
-
+    ; прерывание таймера
         xor ax, ax
         mov es, ax
         mov bx, 08h * 4
@@ -85,29 +88,7 @@ Start:
         mov es, ax
 
 ;-------------------------------------------------------------------------------------
-
-
-;EXAMPLE=================================
-        ; mov di, REGFRAME_ADDR
-        ; lea si, REGFRAME_OBSCURED_SPACE
-        ; mov dl, REGFRAME_WIDTH
-        ; mov dh, REGFRAME_HEIGHT
-
-        ; call SaveFrameObscuredSpace 
-
-    ; cycle:
-    ;     int 08h
-    ;     int 09h
-
-    ;     mov  ah, 86h
-	; 	mov  cx, 0Fh	; cx:dx = 186A0h = 0.1 * 10^6 mcs = 0.1 s
-	; 	mov  dx, 86A0h
-	; 	int  15h
-    ; jmp cycle
-;EXAMPLE=================================
-
-
-
+    ; сохранить резидента в памяти
         mov ax, 3100h
         mov dx, offset EOP
         shr dx, 4
@@ -130,13 +111,12 @@ InterceptKeyboard   proc
         push ax bx cx dx di si es ds
 
         push cs
-        pop ds
+        pop  ds
 
         mov ax, VIDEOSEG
         mov es, ax
 
-        in  al, 60h                           ;TODO !!!!!!!
-        ; mov al, MOVE_DOWN_KEY
+        in  al, 60h
 
     check_ctrl_press:
         cmp al, CTRL_KEY_PRESS
@@ -150,7 +130,7 @@ InterceptKeyboard   proc
         cmp al, CTRL_KEY_RELEASE
         jne check_access_to_management
 
-        mov al, 0
+        xor al, al
         mov byte ptr CTRL_KEY_FLAG, al
         jmp TransferControlToInt_09h
 
@@ -158,7 +138,7 @@ InterceptKeyboard   proc
     check_access_to_management:
         mov ah, CTRL_KEY_FLAG
         cmp ah, 1
-        jne TransferControlToInt_09h      ;TODO!!! раскомментить
+        jne TransferControlToInt_09h
 
 ; Checking whether the frame needs to be moved
 ;----------------------------------------------------
@@ -347,89 +327,6 @@ LoadFrameObscuredSpace:
 ;-------------------------------------------------------------------------------------
 
 
-; /useless
-; ;-------------------------------------------------------------------------------------
-; ; Stores the one border into memory
-; ; Entry:    es:di = source
-; ;           ds:si = destination           
-; ;           bx    = step
-; ;           cx    = count of pixels
-; ; Exit:     none
-; ; Destr:    ax, di, si
-; ;-------------------------------------------------------------------------------------
-; StoreFrameBorder:
-;     next_pixel:
-;         mov ax, word ptr es:[di]
-;         mov word ptr ds:[si], ax
-
-;         add di, bx
-;         add si, 2
-
-;         loop next_pixel
-
-;         ret
-;         endp
-; ;-------------------------------------------------------------------------------------
-
-
-; ;-------------------------------------------------------------------------------------
-; ; Stores the all borders into memory
-; ; Entry:    es = VIDEOSEG
-; ;           
-; ; Exit:     none
-; ; Destr:    ax, bx, cx, dx, si, di
-; ;-------------------------------------------------------------------------------------
-; StoreFrameFringing:
-;     ; store high border     
-;         mov di, REGFRAME_ADDR 
-;         sal di, 1                   ; 1 pixel = 2 bytes
-
-;         lea si, HIGH_BORDER
-;         mov bx, 2                   ; step = 1 word
-;         mov cx, REGFRAME_WIDTH
-
-;         call StoreFrameBorder
-
-;     ; store low border
-;         mov di, REGFRAME_HEIGHT - 1
-;         mov ax, CONSOLE_WIDTH
-;         mul di
-;         add ax, REGFRAME_ADDR
-;         mov di, ax
-;         sal di, 1                   ; 1 pixel = 2 bytes
-
-;         lea si, LOW_BORDER
-;         mov bx, 2                   ; step = 1 word
-;         mov cx, REGFRAME_WIDTH
-
-;         call StoreFrameBorder
-
-;     ; store left border
-;         mov di, REGFRAME_ADDR 
-;         sal di, 1                   ; 1 pixel = 2 bytes
-
-;         lea si, LEFT_BORDER
-;         mov bx, CONSOLE_WIDTH * 2   ; step = 1 pixel down = console_width
-;         mov cx, REGFRAME_HEIGHT
-
-;         call StoreFrameBorder
-
-;     ; store right border
-;         mov di, REGFRAME_ADDR
-;         add di, REGFRAME_WIDTH - 1
-;         sal di, 1                   ; 1 pixel = 2 bytes
-
-;         lea si, RIGHT_BORDER
-;         mov bx, CONSOLE_WIDTH * 2   ; step = 1 pixel down = console_width
-;         mov cx, REGFRAME_HEIGHT
-
-;         call StoreFrameBorder
-
-;         ret
-;         endp
-; ;-------------------------------------------------------------------------------------
-; ; useless/
-
 
 ;-------------------------------------------------------------------------------------
 ; Intercepts timer interrupt and if FRAME_KEY_FLAG = 1 prints a frame with registers
@@ -532,22 +429,7 @@ PrintFrame:
         mov ss:[bp - 2], ax     ; frame color = [bp - 1], bckg color = [bp - 2]
         mov ss:[bp - 4], di
 
-        ; xor ax, ax
-        ; mov al, dh              ; ax = dh/2 * CONSOLE_WIDTH + dl/2 = (dh * CONSOLE_WIDTH + dl) / 2
-        ; sar ax, 1
 
-        ; mov cx, CONSOLE_WIDTH
-        ; push dx
-        ; mul cx
-        ; pop dx
-
-        ; xor ch, ch
-        ; mov cl, dl              ; TODO ???
-        ; sar cx, 1
-
-        ; add ax, cx              ; ax = offset from the upper-left edge of the frame to the center
-
-        ; sub di, ax              ; addr of the upper-left edge of the frame
         sal di, 1               ; *=2 (1 character = 2 bytes)
 
         xor ch, ch
@@ -562,10 +444,11 @@ PrintFrame:
         add di, CONSOLE_WIDTH * 2d
 		add bx, 3d
 
+        xor cx, cx
 		mov cl, dh
-        sub cx, 2d       ; for 1st end last lines
 
-        inc cx
+        dec cx              ; sub cx, 2 (for 1st end last lines)  and  inc cx (for cycle loop type of while)
+
         jmp test2
 
     loop2:              ; for (cx = height; cx > 0; cx--)
@@ -609,7 +492,6 @@ PrintFrame:
 ; Destr:	cx, di
 ;-------------------------------------------------------------------------------------
 PrintRow:
-        ; mov ah, 0Fh
         push ax         ; save frame color
 
         mov al, [bx]
@@ -641,24 +523,6 @@ PrintRow:
 ; Destr:    ax, cx, di, si
 ;-------------------------------------------------------------------------------------
 PrintTextInFrame:
-        ; xor ax, ax
-        ; mov al, dh              ; ax = dh/2 * CONSOLE_WIDTH + dl/2 = (dh * CONSOLE_WIDTH + dl) / 2
-        ; sar ax, 1
-
-        ; mov  cx, CONSOLE_WIDTH
-        ; push dx
-        ; mul  cx
-        ; pop  dx
-
-        ; xor ch, ch
-        ; mov cl, dl              ; TODO ???
-        ; sar cx, 1
-
-        ; add ax, cx              ; ax = offset from the upper-left edge of the frame to the center
-
-        ; sub di, ax              ; addr of the upper-left edge of the frame
-        ; sal di, 1               ; *=2 (1 character = 2 bytes)
-
         add di, SHIFT_LU2CENTER_REGFRAME
         sal di, 1               ; 1 pixel = 2 bytes
 
@@ -674,7 +538,7 @@ PrintTextInFrame:
         jb no_text
 
     ; don't go out of bounds by y
-        mov ah, 0               
+        xor ah, ah               
         mov al, dh
         sub ax, 2               ; minus borders
 
@@ -706,7 +570,7 @@ PrintTextInFrame:
         push di
 
     ; don't go out of bounds by x
-        mov ah, 0               
+        xor ah, ah               
         mov al, dl
         sub ax, 2               ; minus borders
 
@@ -824,7 +688,7 @@ CountNumOfLines:
 
         dec ah      ; count_of_lines = count_of_borders - 1
 
-        mov ch, 0
+        xor ch, ch
         mov cl, ah
 
         ret
@@ -1099,7 +963,7 @@ GetArgs:
         mov  cx, ax
 
         pop  dx ax
-        cmp  cx, 0       ; if style = 0 get table chars from console
+        cmp  cx, 0       ; if style = 0 get table chars from console      ; mb test????
         je   get_table_chars
 
         sub cx, 11      
@@ -1128,28 +992,24 @@ GetArgs:
 
 
 REGISTERS_INFO_STR: 
-            db '*/ax = '
-AX_INFO     db '0000'
+                db '*/ax = '
+AX_INFO         db '0000'
 
-            db '/bx = '
-BX_INFO     db '0000'
+                db '/bx = '
+BX_INFO         db '0000'
 
-            db '/cx = '
-CX_INFO     db '0000'
+                db '/cx = '
+CX_INFO         db '0000'
 
-            db '/dx = '
-DX_INFO     db '0000'
+                db '/dx = '
+DX_INFO         db '0000'
 
-            db '/di = '
-DI_INFO     db '0000'
+                db '/di = '
+DI_INFO         db '0000'
 
-            db '/si = '
-SI_INFO     db '0000/*'
+                db '/si = '
+SI_INFO         db '0000/*'
 
-
-REGFRAME_ADDR   dw CONSOLE_RIGHT_UP_CORNER          ; addr of pixel in left-up corner
-
-REGFRAME_OBSCURED_SPACE  dw (REGFRAME_WIDTH * REGFRAME_HEIGHT) dup (0)      ; the space that the frame obscures 
 
 REGS_KEY_FLAG   db 0
 CTRL_KEY_FLAG   db 0
@@ -1159,7 +1019,9 @@ FRAME_FLAG      db 0
 FRAME_STYLE_1   db '*ЙН»є єИНј*'
 FRAME_STYLE_2   db '*+-+l l+-+*'
 
-STRING          db '*/gfgfg/fgfg/fgsdadsf/*'
+
+REGFRAME_ADDR            dw CONSOLE_RIGHT_UP_CORNER                         ; addr of pixel in left-up corner
+REGFRAME_OBSCURED_SPACE  dw (REGFRAME_WIDTH * REGFRAME_HEIGHT) dup (0)      ; the space that the frame obscures 
 
 EOP:
 end Start
