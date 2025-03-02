@@ -1,5 +1,5 @@
 .model tiny
-.186
+.386
 
 .code
 
@@ -14,8 +14,8 @@ CONSOLE_MOVEMENT equ 2d
 
 CENTER_ADDR      equ CONSOLE_WIDTH * (CONSOLE_HEIGHT / 2 + CONSOLE_MOVEMENT) + CONSOLE_WIDTH / 2
 
-FRAME_WIDTH    	 equ 50d
-FRAME_HEIGHT     equ 20d
+FRAME_WIDTH    	 equ 20d
+FRAME_HEIGHT     equ 10d
 
 PARTITION_SYM    equ '/'
 LINE_END_SYM     equ '*'
@@ -29,18 +29,15 @@ Start:
 		mov di, VIDEOSEG
 		mov es, di
 
-        cld             ; moving forward		
 
 		; mov dl, FRAME_WIDTH
 		; mov dh, FRAME_HEIGHT
-        ; mov al, 0AAh
         ; mov ah, 0AAh
+        ; mov al, 00001001b
 
-        ; lea bx, TABLE_CHARS + 1     ; skip LINE_END_SYM
-        ; lea si, STRING;
-        
-        ; lea bx, TABLE_CHARS + 1     ; skip LINE_END_SYM
+        ; lea bx, FRAME_STYLE_1 + 1     ; skip LINE_END_SYM
         ; lea si, STRING
+        
         mov di, CENTER_ADDR
 		; call PrintFrame
 		call PrintGrowingFrame
@@ -179,6 +176,8 @@ PrintRow:
 ; Destr:    ax, cx, di, si
 ;-------------------------------------------------------------------------------------
 PrintTextInFrame:
+        cld             ; moving forward		
+
         push di es
         call CountNumOfLines    ; cx = count of lines
         pop  es di
@@ -267,11 +266,10 @@ PrintTextInFrame:
 ; Destr:    cx, di, si
 ;-------------------------------------------------------------------------------------
 PrintLine:
-        mov ah, 0Fh
-
     print_line_loop:
         lodsb
-        stosw
+        stosb
+        inc di
         loop print_line_loop
 
         ret
@@ -542,30 +540,28 @@ Pow:
 GetArgs:
         mov si, CONSOLE_ARGS
 
-        mov cl, ds:[si]
+        ; mov cl, ds:[si]
         add si, 2       ; skip args len and space
 
     ; get length    
-        push cx         
         call AtoI_dec   ; after that si pointers on the next arg
-        pop  cx
         mov  dl, al
 
     ; get height
-        push cx dx
+        push dx
         call AtoI_dec
-        pop  dx cx
+        pop  dx
         mov  dh, al
 
     ; get frame color
-        push cx dx
+        push dx
         call AtoI_hex
-        pop  dx cx
+        pop  dx
         mov  ah, al
         xor  al, al
 
     ; get bckg color
-        push cx dx
+        push dx
 
         mov  ch, ah
         push cx
@@ -573,9 +569,26 @@ GetArgs:
         pop  cx
         mov  ah, ch
 
-        pop  dx cx
+        pop  dx
         
-    ; get table chars
+    ; get style of frame (0 - custom, 1-3 - ready-made styles)
+        push ax dx
+        call AtoI_dec
+
+        mov  cx, 11     ; 9 symbols + LINE_END_SYM x 2
+        mul  cx
+        mov  cx, ax
+
+        pop  dx ax
+        cmp  cx, 0       ; if style = 0 get table chars from console
+        je   get_table_chars
+
+        sub cx, 11      
+        add cx, offset FRAME_STYLE_1 + 1
+        mov bx, cx
+        jmp get_text
+
+    get_table_chars:
         inc si         ; skip LINE_END_SYM
         mov bx, si
         push ax
@@ -585,7 +598,7 @@ GetArgs:
         add si, cx
         add si, 2       ; + LINE_END_SYM + space
 
-    ; get line which should be inside the frame
+    get_text:           ;which should be inside the frame
         ; si is already pointing at it
 
         ret
@@ -595,6 +608,10 @@ GetArgs:
 .data
 
 STRING 			db '*/HI GITLER 12345/6789/PAMPAMPAMPAMPAMPAMPAMPPAMP/ZZZZZZZZZZZZZZZZZZZZZZZZ/huizalupapenisher/rrrrrrrrr/aaaaaaa/bbbbbb/*'
-TABLE_CHARS		db '*…Õª∫ ∫»Õº*'
+
+FRAME_STYLE_1	db '*…Õª∫ ∫»Õº*'
+FRAME_STYLE_2	db '*+-+l l+-+*'
+
+FRAME_FLAG      db 0
 
 end Start

@@ -4,6 +4,7 @@
 .code
 
 org 100h
+;-------------------------------------------------------------------------------------
 
 
 VIDEOSEG	                equ 0b800h
@@ -11,7 +12,7 @@ CONSOLE_ARGS                equ 80h
 
 CONSOLE_WIDTH               equ 80d
 CONSOLE_HEIGHT              equ 25d
-CONSOLE_MOVEMENT            equ 2d
+CONSOLE_MOVEMENT            equ 2d          ; the extent to which the console shifts after entering a command
 
 CENTER_ADDR                 equ CONSOLE_WIDTH * (CONSOLE_HEIGHT / 2 + CONSOLE_MOVEMENT) + CONSOLE_WIDTH / 2
 
@@ -25,7 +26,6 @@ REGFRAME_BORDER_COLOR       equ 00001110b
 REGFRAME_BCKG_COLOR         equ 00001110b
 
 SHIFT_LU2CENTER_REGFRAME    equ CONSOLE_WIDTH * (REGFRAME_HEIGHT / 2) + (REGFRAME_WIDTH / 2)     ; in pixels
-
 
 CONSOLE_RIGHT_UP_CORNER     equ CONSOLE_WIDTH - REGFRAME_WIDTH
 
@@ -989,7 +989,6 @@ GetArgs:
 ;-------------------------------------------------------------------------------------
 
 .data
-
 
 REGISTERS_INFO_STR: 
                 db '*/ax = '
